@@ -7,8 +7,8 @@
 |  2  | 3122411189 | [Đỗ Phú Thành](https://github.com/dothanh881)        | DCT122C3 |
 
 *TRANG CHU 
-![Homepage](./img/Web%20capture_29-1-2024_04620_127.0.0.1.jpeg)
+![Homepage](./imgs/screenshots/review_homepage.png)
 *THONG TIN CHI TIET
-![Aboutpage](./img/Web%20capture_29-1-2024_05011_127.0.0.1.jpeg)
+![Aboutpage](./imgs/screenshots/review_aboutpage.png)
 *KHAM PHA CAC MON AN
-![ExploreFoodpage](./img/Web%20capture_29-1-2024_05011_127.0.0.1.jpeg)
+![ExploreFoodpage](./imgs/screenshots/review_explorefoodspage.png)
