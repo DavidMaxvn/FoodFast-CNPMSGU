@@ -24,7 +24,7 @@
 ### TRANG KHAM PHA CAC MON AN
 ![ExploreFoodpage](./imgs/screenshots/review_explorefoodspage.png)
 
-## Capturas details
+## Capture example of deliver on maps
 <img align="center" src="./images/img1.png"/>
 <img align="center" src="./images/img3.png"/>
 <img align="center" src="./images/img4.png"/>
