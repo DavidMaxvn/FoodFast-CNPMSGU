@@ -1,5 +1,3 @@
-<<<<<<< nhatquyen
-=======
 # Đồ án nhóm 21 Công nghệ phần mềm - FastFood
 <h1 align="center">DS Delivery - SDS2</h1>
 
@@ -31,4 +29,4 @@
 <img align="center" src="./images/img3.png"/>
 <img align="center" src="./images/img4.png"/>
 <img align="center" src="./images/img5.png"/>
->>>>>>> main
+
