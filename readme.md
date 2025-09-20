@@ -1,4 +1,17 @@
+<<<<<<< nhatquyen
+=======
 # Đồ án nhóm 21 Công nghệ phần mềm - FastFood
+<h1 align="center">DS Delivery - SDS2</h1>
+
+## Requisitos
+- npm >=20
+- JDK 17
+
+## Tecnologias
+- Java
+- Spring Boot
+- React JS
+- Typescript
 
 ## THÀNH VIÊN NHÓM
 | STT |    MSSV    | Họ và tên                                            |   Lớp    |
@@ -13,3 +26,9 @@
 ### TRANG KHAM PHA CAC MON AN
 ![ExploreFoodpage](./imgs/screenshots/review_explorefoodspage.png)
 
+## Capturas details
+<img align="center" src="./images/img1.png"/>
+<img align="center" src="./images/img3.png"/>
+<img align="center" src="./images/img4.png"/>
+<img align="center" src="./images/img5.png"/>
+>>>>>>> main
