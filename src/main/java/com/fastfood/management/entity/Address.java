@@ -43,5 +43,6 @@ public class Address {
     private Double lng;
     
     @Column(name = "is_default")
+    @Builder.Default
     private boolean isDefault = false;
 }

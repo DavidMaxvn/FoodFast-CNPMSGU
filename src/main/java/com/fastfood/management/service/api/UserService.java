@@ -12,7 +12,7 @@ public interface UserService {
     JwtResponse login(LoginRequest loginRequest);
     UserResponse register(RegisterRequest registerRequest);
     UserResponse getUserById(Long id);
-    UserResponse getCurrentUser();
+    User getCurrentUser();
     List<UserResponse> getAllUsers();
     UserResponse updateUser(Long id, User user);
     void deleteUser(Long id);

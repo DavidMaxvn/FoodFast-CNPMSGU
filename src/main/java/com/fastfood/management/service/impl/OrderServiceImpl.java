@@ -4,7 +4,6 @@ import com.fastfood.management.dto.request.OrderRequest;
 import com.fastfood.management.dto.response.OrderResponse;
 import com.fastfood.management.entity.*;
 import com.fastfood.management.repository.*;
-import com.fastfood.management.service.api.InventoryService;
 import com.fastfood.management.service.api.OrderService;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
@@ -28,19 +27,18 @@ public class OrderServiceImpl implements OrderService {
     private final MenuItemRepository menuItemRepository;
     private final AddressRepository addressRepository;
     private final OrderActivityRepository orderActivityRepository;
-    private final InventoryService inventoryService;
     private final WebSocketService webSocketService;
 
     @Override
     @Transactional
-    public OrderResponse createOrder(OrderRequest orderRequest) {
+    public Order createOrder(OrderRequest orderRequest, User currentUser) {
         // Validate address
         Address address = addressRepository.findById(orderRequest.getAddressId())
                 .orElseThrow(() -> new EntityNotFoundException("Address not found"));
         
         // Create order
         Order order = Order.builder()
-                .customer(address.getUser())
+                .customer(currentUser)
                 .status(Order.OrderStatus.CREATED)
                 .totalAmount(BigDecimal.ZERO)
                 .paymentMethod(Order.PaymentMethod.valueOf(orderRequest.getPaymentMethod()))
@@ -76,11 +74,6 @@ public class OrderServiceImpl implements OrderService {
             menuItemQuantities.put(menuItem.getId(), itemRequest.getQuantity());
         }
         
-        // Check inventory
-        if (!inventoryService.checkStock(menuItemQuantities)) {
-            throw new IllegalStateException("Some items are out of stock");
-        }
-        
         // Update order total
         order.setTotalAmount(totalAmount);
         order = orderRepository.save(order);
@@ -96,23 +89,25 @@ public class OrderServiceImpl implements OrderService {
         // Send WebSocket notification
         webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
         
-        // Convert to response
-        return mapOrderToResponse(order);
+        return order;
     }
 
     @Override
-    public OrderResponse getOrderById(Long id) {
+    public Order getOrderById(Long id, User currentUser) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found"));
-        return mapOrderToResponse(order);
+        
+        // Check if user has access to this order
+        if (!order.getCustomer().getId().equals(currentUser.getId())) {
+            throw new IllegalStateException("Access denied: Order does not belong to current user");
+        }
+        
+        return order;
     }
 
     @Override
-    public Page<OrderResponse> getMyOrders(Pageable pageable) {
-        // This would use SecurityContextHolder to get current user in a real implementation
-        User currentUser = getCurrentUser();
-        Page<Order> orders = orderRepository.findByCustomer(currentUser, pageable);
-        return orders.map(this::mapOrderToResponse);
+    public List<Order> listMyOrders(User currentUser) {
+        return orderRepository.findByCustomerOrderByCreatedAtDesc(currentUser);
     }
 
     @Override
@@ -131,31 +126,6 @@ public class OrderServiceImpl implements OrderService {
         
         // Validate status transition
         validateStatusTransition(oldStatus, status);
-        
-        // Handle inventory based on status
-        if (status == Order.OrderStatus.PREPARING) {
-            // Reserve inventory
-            Map<Long, Integer> menuItemQuantities = order.getOrderItems().stream()
-                    .collect(Collectors.toMap(
-                            item -> item.getMenuItem().getId(),
-                            OrderItem::getQuantity
-                    ));
-            
-            if (!inventoryService.reserveStock(menuItemQuantities)) {
-                throw new IllegalStateException("Failed to reserve inventory");
-            }
-        } else if (status == Order.OrderStatus.READY_FOR_DELIVERY) {
-            // Commit inventory reservation
-            Map<Long, Integer> menuItemQuantities = order.getOrderItems().stream()
-                    .collect(Collectors.toMap(
-                            item -> item.getMenuItem().getId(),
-                            OrderItem::getQuantity
-                    ));
-            
-            if (!inventoryService.commitReservation(menuItemQuantities)) {
-                throw new IllegalStateException("Failed to commit inventory reservation");
-            }
-        }
         
         // Update order status
         order.setStatus(status);
@@ -178,48 +148,37 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
-    public OrderResponse cancelOrder(Long id, String reason) {
+    public void cancelOrder(Long id, String reason, User currentUser) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found"));
         
-        // Check if order can be cancelled
-        if (order.getStatus() == Order.OrderStatus.DELIVERED || 
-            order.getStatus() == Order.OrderStatus.CANCELLED || 
-            order.getStatus() == Order.OrderStatus.REJECTED) {
-            throw new IllegalStateException("Order cannot be cancelled in current state");
+        // Check if user has access to this order
+        if (!order.getCustomer().getId().equals(currentUser.getId())) {
+            throw new IllegalStateException("Access denied: Order does not belong to current user");
         }
         
-        Order.OrderStatus oldStatus = order.getStatus();
-        
-        // Release inventory if reserved
-        if (order.getStatus() == Order.OrderStatus.PREPARING) {
-            Map<Long, Integer> menuItemQuantities = order.getOrderItems().stream()
-                    .collect(Collectors.toMap(
-                            item -> item.getMenuItem().getId(),
-                            OrderItem::getQuantity
-                    ));
-            
-            inventoryService.releaseReservation(menuItemQuantities);
+        // Check if order can be cancelled
+        if (order.getStatus() != Order.OrderStatus.CREATED && 
+            order.getStatus() != Order.OrderStatus.PENDING_PAYMENT) {
+            throw new IllegalStateException("Order cannot be cancelled in current status");
         }
         
         // Update order status
+        Order.OrderStatus oldStatus = order.getStatus();
         order.setStatus(Order.OrderStatus.CANCELLED);
-        order = orderRepository.save(order);
+        orderRepository.save(order);
         
         // Create order activity
         OrderActivity activity = OrderActivity.builder()
                 .order(order)
-                .actor(getCurrentUser())
                 .fromStatus(oldStatus)
                 .toStatus(Order.OrderStatus.CANCELLED)
-                .reason(reason)
+                .note(reason)
                 .build();
         orderActivityRepository.save(activity);
         
         // Send WebSocket notification
         webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
-        
-        return mapOrderToResponse(order);
     }
     
     // Helper methods

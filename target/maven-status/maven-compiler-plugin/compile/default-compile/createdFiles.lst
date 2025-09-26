@@ -1,0 +1,7 @@
+com\fastfood\management\mapper\OrderMapperImpl.class
+com\fastfood\management\mapper\AddressMapperImpl.class
+com\fastfood\management\mapper\DeliveryMapperImpl.class
+com\fastfood\management\mapper\PaymentMapperImpl.class
+com\fastfood\management\mapper\CategoryMapperImpl.class
+com\fastfood\management\mapper\UserMapperImpl.class
+com\fastfood\management\mapper\MenuItemMapperImpl.class
