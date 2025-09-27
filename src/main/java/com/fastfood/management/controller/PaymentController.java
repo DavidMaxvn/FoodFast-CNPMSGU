@@ -17,24 +17,24 @@ import java.util.Map;
 public class PaymentController {
 
     private final PaymentService paymentService;
-
-    @PostMapping("/vnpay/{orderId}")
-    public ResponseEntity<VNPayResponse> createVNPayPayment(
-            @PathVariable Long orderId,
-            @Valid @RequestBody PaymentRequest paymentRequest) {
-        VNPayResponse response = paymentService.createVNPayPayment(orderId, paymentRequest);
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/vnpay/return")
-    public ResponseEntity<PaymentResponse> processVNPayReturn(@RequestParam Map<String, String> vnpParams) {
-        PaymentResponse response = paymentService.processVNPayReturn(vnpParams);
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/order/{orderId}")
-    public ResponseEntity<PaymentResponse> getPaymentByOrderId(@PathVariable Long orderId) {
-        PaymentResponse response = paymentService.getPaymentByOrderId(orderId);
-        return ResponseEntity.ok(response);
-    }
+//
+//    @PostMapping("/vnpay/{orderId}")
+//    public ResponseEntity<VNPayResponse> createVNPayPayment(
+//            @PathVariable Long orderId,
+//            @Valid @RequestBody PaymentRequest paymentRequest) {
+//        VNPayResponse response = paymentService.createVNPayPayment(orderId, paymentRequest);
+//        return ResponseEntity.ok(response);
+//    }
+//
+//    @GetMapping("/vnpay/return")
+//    public ResponseEntity<PaymentResponse> processVNPayReturn(@RequestParam Map<String, String> vnpParams) {
+//        PaymentResponse response = paymentService.processVNPayReturn(vnpParams);
+//        return ResponseEntity.ok(response);
+//    }
+//
+//    @GetMapping("/order/{orderId}")
+//    public ResponseEntity<PaymentResponse> getPaymentByOrderId(@PathVariable Long orderId) {
+//        PaymentResponse response = paymentService.getPaymentByOrderId(orderId);
+//        return ResponseEntity.ok(response);
+//    }
 }

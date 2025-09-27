@@ -20,41 +20,41 @@ public class DeliveryController {
 
     private final DeliveryService deliveryService;
 
-    @GetMapping
-    @PreAuthorize("hasRole('DRONE')")
-    public ResponseEntity<List<DeliveryResponse>> getReadyForDelivery() {
-        List<DeliveryResponse> deliveries = deliveryService.getReadyForDelivery();
-        return ResponseEntity.ok(deliveries);
-    }
-
-    @PostMapping("/{id}/accept")
-    @PreAuthorize("hasRole('DRONE')")
-    public ResponseEntity<DeliveryResponse> acceptDelivery(
-            @PathVariable Long id,
-            @AuthenticationPrincipal Long droneUserId) {
-        DeliveryResponse delivery = deliveryService.acceptDelivery(id, droneUserId);
-        return ResponseEntity.ok(delivery);
-    }
-
-    @PostMapping("/{id}/gps")
-    @PreAuthorize("hasRole('DRONE')")
-    public ResponseEntity<DeliveryResponse> updateGpsPosition(
-            @PathVariable Long id,
-            @Valid @RequestBody GpsUpdateRequest gpsRequest) {
-        DeliveryResponse delivery = deliveryService.updateGpsPosition(id, gpsRequest);
-        return ResponseEntity.ok(delivery);
-    }
-
-    @PostMapping("/{id}/complete")
-    @PreAuthorize("hasRole('DRONE')")
-    public ResponseEntity<DeliveryResponse> completeDelivery(@PathVariable Long id) {
-        DeliveryResponse delivery = deliveryService.completeDelivery(id);
-        return ResponseEntity.ok(delivery);
-    }
-
-    @GetMapping("/{orderId}/track")
-    public ResponseEntity<TrackingResponse> trackDelivery(@PathVariable Long orderId) {
-        TrackingResponse tracking = deliveryService.trackDelivery(orderId);
-        return ResponseEntity.ok(tracking);
-    }
+//    @GetMapping
+//    @PreAuthorize("hasRole('DRONE')")
+//    public ResponseEntity<List<DeliveryResponse>> getReadyForDelivery() {
+//        List<DeliveryResponse> deliveries = deliveryService.getReadyForDelivery();
+//        return ResponseEntity.ok(deliveries);
+//    }
+//
+//    @PostMapping("/{id}/accept")
+//    @PreAuthorize("hasRole('DRONE')")
+//    public ResponseEntity<DeliveryResponse> acceptDelivery(
+//            @PathVariable Long id,
+//            @AuthenticationPrincipal Long droneUserId) {
+//        DeliveryResponse delivery = deliveryService.acceptDelivery(id, droneUserId);
+//        return ResponseEntity.ok(delivery);
+//    }
+//
+//    @PostMapping("/{id}/gps")
+//    @PreAuthorize("hasRole('DRONE')")
+//    public ResponseEntity<DeliveryResponse> updateGpsPosition(
+//            @PathVariable Long id,
+//            @Valid @RequestBody GpsUpdateRequest gpsRequest) {
+//        DeliveryResponse delivery = deliveryService.updateGpsPosition(id, gpsRequest);
+//        return ResponseEntity.ok(delivery);
+//    }
+//
+//    @PostMapping("/{id}/complete")
+//    @PreAuthorize("hasRole('DRONE')")
+//    public ResponseEntity<DeliveryResponse> completeDelivery(@PathVariable Long id) {
+//        DeliveryResponse delivery = deliveryService.completeDelivery(id);
+//        return ResponseEntity.ok(delivery);
+//    }
+//
+//    @GetMapping("/{orderId}/track")
+//    public ResponseEntity<TrackingResponse> trackDelivery(@PathVariable Long orderId) {
+//        TrackingResponse tracking = deliveryService.trackDelivery(orderId);
+//        return ResponseEntity.ok(tracking);
+//    }
 }

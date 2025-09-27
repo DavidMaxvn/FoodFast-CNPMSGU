@@ -22,46 +22,46 @@ public class OrderController {
 
     private final OrderService orderService;
 
-    @PostMapping
-    @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<?> createOrder(
-            @Valid @RequestBody OrderRequest orderRequest,
-            @AuthenticationPrincipal User currentUser) {
-        Order order = orderService.createOrder(orderRequest, currentUser);
-        return ResponseEntity.status(HttpStatus.CREATED).body(order);
-    }
-
-    @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('CUSTOMER', 'KITCHEN', 'ADMIN')")
-    public ResponseEntity<?> getOrderById(@PathVariable Long id, @AuthenticationPrincipal User currentUser) {
-        Order order = orderService.getOrderById(id, currentUser);
-        return ResponseEntity.ok(order);
-    }
-
-    @GetMapping("/me")
-    @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<?> getMyOrders(@AuthenticationPrincipal User currentUser) {
-        List<Order> orders = orderService.listMyOrders(currentUser);
-        return ResponseEntity.ok(orders);
-    }
-
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<?> cancelOrder(
-            @PathVariable Long id,
-            @RequestParam(required = false) String reason,
-            @AuthenticationPrincipal User currentUser) {
-        orderService.cancelOrder(id, reason, currentUser);
-        return ResponseEntity.ok(Map.of("message", "Order cancelled successfully"));
-    }
-
-    @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('KITCHEN', 'ADMIN')")
-    public ResponseEntity<?> updateOrderStatus(
-            @PathVariable Long id,
-            @RequestParam Order.OrderStatus status,
-            @AuthenticationPrincipal User currentUser) {
-        Order updatedOrder = orderService.updateOrderStatus(id, status, currentUser);
-        return ResponseEntity.ok(updatedOrder);
-    }
+//    @PostMapping
+//    @PreAuthorize("hasRole('CUSTOMER')")
+//    public ResponseEntity<?> createOrder(
+//            @Valid @RequestBody OrderRequest orderRequest,
+//            @AuthenticationPrincipal User currentUser) {
+//        Order order = orderService.createOrder(orderRequest, currentUser);
+//        return ResponseEntity.status(HttpStatus.CREATED).body(order);
+//    }
+//
+//    @GetMapping("/{id}")
+//    @PreAuthorize("hasAnyRole('CUSTOMER', 'KITCHEN', 'ADMIN')")
+//    public ResponseEntity<?> getOrderById(@PathVariable Long id, @AuthenticationPrincipal User currentUser) {
+//        Order order = orderService.getOrderById(id, currentUser);
+//        return ResponseEntity.ok(order);
+//    }
+//
+//    @GetMapping("/me")
+//    @PreAuthorize("hasRole('CUSTOMER')")
+//    public ResponseEntity<?> getMyOrders(@AuthenticationPrincipal User currentUser) {
+//        List<Order> orders = orderService.listMyOrders(currentUser);
+//        return ResponseEntity.ok(orders);
+//    }
+//
+//    @DeleteMapping("/{id}")
+//    @PreAuthorize("hasRole('CUSTOMER')")
+//    public ResponseEntity<?> cancelOrder(
+//            @PathVariable Long id,
+//            @RequestParam(required = false) String reason,
+//            @AuthenticationPrincipal User currentUser) {
+//        orderService.cancelOrder(id, reason, currentUser);
+//        return ResponseEntity.ok(Map.of("message", "Order cancelled successfully"));
+//    }
+//
+//    @PatchMapping("/{id}/status")
+//    @PreAuthorize("hasAnyRole('KITCHEN', 'ADMIN')")
+//    public ResponseEntity<?> updateOrderStatus(
+//            @PathVariable Long id,
+//            @RequestParam Order.OrderStatus status,
+//            @AuthenticationPrincipal User currentUser) {
+//        Order updatedOrder = orderService.updateOrderStatus(id, status, currentUser);
+//        return ResponseEntity.ok(updatedOrder);
+//    }
 }
