@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 
 import java.math.BigDecimal;
 
@@ -37,5 +38,6 @@ public class MenuItem {
     
     @ManyToOne
     @JoinColumn(name = "category_id")
+    @JsonManagedReference(value = "category-menuItems")
     private Category category;
 }
