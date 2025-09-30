@@ -38,7 +38,7 @@ const menuSlice = createSlice({
       state.isLoading = false;
       state.items = action.payload;
       state.filteredItems = action.payload;
-      state.categories = Array.from(new Set(action.payload.map(item => item.category)));
+      // state.categories = [...new Set(action.payload.map(item => item.category))];
     },
     fetchMenuFailure: (state, action: PayloadAction<string>) => {
       state.isLoading = false;

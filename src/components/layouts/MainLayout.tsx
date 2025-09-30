@@ -1,17 +1,27 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
-import { AppBar, Toolbar, Typography, Button, Badge, Container, Box } from '@mui/material';
+import { AppBar, Toolbar, Typography, Button, Badge, Container, Box, Menu, MenuItem } from '@mui/material';
 import { ShoppingCart, Person } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store';
+import { logout } from '../../store/slices/authSlice';
 
 const MainLayout: React.FC = () => {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const { items } = useSelector((state: RootState) => state.cart);
-  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
+  const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
 
   const cartItemCount = items.reduce((total, item) => total + item.quantity, 0);
+
+  // Dropdown state
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const menuOpen = Boolean(anchorEl);
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => setAnchorEl(event.currentTarget);
+  const handleMenuClose = () => setAnchorEl(null);
+  const handleProfile = () => { handleMenuClose(); navigate('/profile'); };
+  const handleLogout = () => { handleMenuClose(); dispatch(logout()); navigate('/login'); };
 
   return (
     <>
@@ -39,13 +49,25 @@ const MainLayout: React.FC = () => {
             </Button>
             
             {isAuthenticated ? (
-              <Button 
-                color="inherit"
-                onClick={() => navigate('/profile')}
-              >
-                <Person />
-                Profile
-              </Button>
+              <>
+                <Button 
+                  color="inherit"
+                  onClick={handleMenuOpen}
+                  startIcon={<Person />}
+                >
+                  {user?.fullName || user?.email || 'Account'}
+                </Button>
+                <Menu
+                  anchorEl={anchorEl}
+                  open={menuOpen}
+                  onClose={handleMenuClose}
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                  transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                >
+                  <MenuItem onClick={handleProfile}>Profile</MenuItem>
+                  <MenuItem onClick={handleLogout}>Logout</MenuItem>
+                </Menu>
+              </>
             ) : (
               <Button 
                 color="inherit"
@@ -57,18 +79,10 @@ const MainLayout: React.FC = () => {
           </Box>
         </Toolbar>
       </AppBar>
-      
-      <Container maxWidth="lg" sx={{ py: 4 }}>
+
+      <Container sx={{ mt: 2 }}>
         <Outlet />
       </Container>
-      
-      <Box component="footer" sx={{ bgcolor: 'background.paper', py: 6, mt: 'auto' }}>
-        <Container maxWidth="lg">
-          <Typography variant="body2" color="text.secondary" align="center">
-            © {new Date().getFullYear()} FastFood Delivery. All rights reserved.
-          </Typography>
-        </Container>
-      </Box>
     </>
   );
 };

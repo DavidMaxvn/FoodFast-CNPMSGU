@@ -4,6 +4,7 @@ import { CheckCircle, Cancel } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { clearCart } from '../store/slices/cartSlice';
+import { simulateVNPayReturn } from '../services/payment';
 
 const PaymentResult: React.FC = () => {
   const navigate = useNavigate();
@@ -23,6 +24,15 @@ const PaymentResult: React.FC = () => {
   useEffect(() => {
     // Handle VNPay return
     if (vnpResponseCode) {
+      // Notify backend to process VNPay return (verify signature & update order/payment)
+      try {
+        const query: Record<string, string> = {};
+        searchParams.forEach((value, key) => { query[key] = value; });
+        simulateVNPayReturn(query);
+      } catch (e) {
+        console.error('Failed to verify VNPay return on backend', e);
+      }
+
       if (vnpResponseCode === '00') {
         // Payment successful
         const newOrderId = vnpTxnRef || `ORD_${Date.now()}`;
@@ -95,8 +105,9 @@ const PaymentResult: React.FC = () => {
               <Button
                 variant="contained"
                 color="primary"
-                onClick={() => navigate('/order-tracking')}
+                onClick={() => navigate(`/order/tracking/${orderId}`)}
                 sx={{ mr: 2 }}
+                disabled={!orderId}
               >
                 Theo dõi đơn hàng
               </Button>

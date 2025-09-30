@@ -15,8 +15,11 @@ interface AuthState {
   isLoading: boolean;
 }
 
+// Restore  localStorage
+const storedUser = localStorage.getItem('user');
+
 const initialState: AuthState = {
-  user: null,
+  user: storedUser ? (JSON.parse(storedUser) as User) : null,
   token: localStorage.getItem('token'),
   refreshToken: localStorage.getItem('refreshToken'),
   isAuthenticated: !!localStorage.getItem('token'),
@@ -38,6 +41,7 @@ const authSlice = createSlice({
       state.refreshToken = action.payload.refreshToken;
       localStorage.setItem('token', action.payload.token);
       localStorage.setItem('refreshToken', action.payload.refreshToken);
+      localStorage.setItem('user', JSON.stringify(action.payload.user));
     },
     loginFailure: (state) => {
       state.isLoading = false;
@@ -45,6 +49,7 @@ const authSlice = createSlice({
       state.user = null;
       state.token = null;
       state.refreshToken = null;
+      localStorage.removeItem('user');
     },
     logout: (state) => {
       state.isAuthenticated = false;
@@ -53,6 +58,7 @@ const authSlice = createSlice({
       state.refreshToken = null;
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
     },
     refreshTokenSuccess: (state, action: PayloadAction<{ token: string; refreshToken: string }>) => {
       state.token = action.payload.token;

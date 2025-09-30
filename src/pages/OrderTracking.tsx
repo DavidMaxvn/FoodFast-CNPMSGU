@@ -24,22 +24,10 @@ import {
   LocalShipping,
   Kitchen
 } from '@mui/icons-material';
-
-// Mock order data
-const mockOrder = {
-  id: 'ORD-12345',
-  status: 'preparing',
-  items: [
-    { id: '1', name: 'Cheeseburger', quantity: 2, price: 8.99, image: 'https://via.placeholder.com/50' },
-    { id: '2', name: 'French Fries', quantity: 1, price: 3.99, image: 'https://via.placeholder.com/50' },
-    { id: '3', name: 'Coca Cola', quantity: 2, price: 1.99, image: 'https://via.placeholder.com/50' }
-  ],
-  total: 25.95,
-  deliveryFee: 2.00,
-  address: '123 Main St, Anytown, USA',
-  estimatedDelivery: '30-45 minutes',
-  paymentMethod: 'VNPay'
-};
+import { useParams } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import { RootState } from '../store';
+import { getOrderById } from '../services/order';
 
 // Order status steps
 const steps = ['Confirmed', 'Preparing', 'Ready for Delivery', 'On the Way', 'Delivered'];
@@ -49,29 +37,119 @@ const statusToStep = {
   ready: 2,
   delivering: 3,
   delivered: 4
+} as const;
+
+type StatusKey = keyof typeof statusToStep;
+
+const backendToUIStatus: Record<string, StatusKey> = {
+  CONFIRMED: 'confirmed',
+  PREPARING: 'preparing',
+  READY_FOR_DELIVERY: 'ready',
+  OUT_FOR_DELIVERY: 'delivering',
+  DELIVERED: 'delivered',
+  // Fallbacks for early states
+  CREATED: 'confirmed',
+  PENDING_PAYMENT: 'confirmed',
+  PAID: 'confirmed',
 };
 
+interface OrderItemUI {
+  id: string | number;
+  name: string;
+  quantity: number;
+  price: number;
+  image?: string;
+}
+
+interface OrderUI {
+  id: number | string;
+  status: StatusKey;
+  items: OrderItemUI[];
+  total: number;
+  deliveryFee: number;
+  address: string;
+  estimatedDelivery: string;
+  paymentMethod: string;
+  paymentStatus?: string;
+}
+
 const OrderTracking: React.FC = () => {
-  const [order, setOrder] = useState(mockOrder);
-  const [activeStep, setActiveStep] = useState(statusToStep[order.status as keyof typeof statusToStep]);
+  const { id } = useParams<{ id: string }>();
+  const auth = useSelector((state: RootState) => state.auth);
+  const userId = auth.user ? Number(auth.user.id) : null;
+
+  const [order, setOrder] = useState<OrderUI | null>(null);
+  const [activeStep, setActiveStep] = useState<number>(0);
   const [isArrivingSoon, setIsArrivingSoon] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Simulate real-time updates
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (activeStep < 3) {
-        setActiveStep(prevStep => prevStep + 1);
-        setOrder(prev => ({
-          ...prev,
-          status: Object.keys(statusToStep)[activeStep + 1]
-        }));
-      } else if (activeStep === 3) {
-        setIsArrivingSoon(true);
+    const fetchOrder = async () => {
+      if (!id || !userId) {
+        setLoading(false);
+        setError('Please login to view your order.');
+        return;
       }
-    }, 10000); // Update every 10 seconds for demo
+      setLoading(true);
+      setError(null);
+      try {
+        const raw = await getOrderById(userId, Number(id));
+        // Map backend Order entity to UI model
+        const uiStatus: StatusKey = backendToUIStatus[raw.status] || 'confirmed';
+        const address = raw.address ? [
+          raw.address.line1,
+          [raw.address.ward, raw.address.district, raw.address.city].filter(Boolean).join(', ')
+        ].filter(Boolean).join(', ') : 'N/A';
+        const items: OrderItemUI[] = Array.isArray(raw.orderItems) ? raw.orderItems.map((it: any) => ({
+          id: it.id,
+          name: it.menuItem?.name || 'Item',
+          quantity: it.quantity,
+          price: Number(it.unitPrice ?? it.menuItem?.price ?? 0),
+          image: it.menuItem?.imageUrl,
+        })) : [];
+        const ui: OrderUI = {
+          id: raw.id,
+          status: uiStatus,
+          items,
+          total: Number(raw.totalAmount ?? 0),
+          deliveryFee: 2.00,
+          address,
+          estimatedDelivery: '30-45 minutes',
+          paymentMethod: (raw.paymentMethod || '').toString(),
+          paymentStatus: (raw.paymentStatus || '').toString(),
+        };
+        setOrder(ui);
+        setActiveStep(statusToStep[uiStatus]);
+        setIsArrivingSoon(statusToStep[uiStatus] === 3);
+      } catch (e: any) {
+        setError(e?.response?.data?.message || 'Failed to load order');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchOrder();
+  }, [id, userId]);
 
-    return () => clearTimeout(timer);
-  }, [activeStep]);
+  if (loading) {
+    return (
+      <Box sx={{ py: 4 }}>
+        <Typography variant="h5">Loading order...</Typography>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ py: 4 }}>
+        <Typography color="error" variant="h6">{error}</Typography>
+      </Box>
+    );
+  }
+
+  if (!order) {
+    return null;
+  }
 
   return (
     <Box sx={{ py: 4 }}>
@@ -105,7 +183,7 @@ const OrderTracking: React.FC = () => {
             <Stepper activeStep={activeStep} alternativeLabel>
               {steps.map((label, index) => {
                 const stepProps = {};
-                const labelProps = {};
+                const labelProps = {} as any;
                 
                 return (
                   <Step key={label} {...stepProps}>
@@ -307,7 +385,7 @@ const OrderTracking: React.FC = () => {
                 Payment Method: {order.paymentMethod}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Payment Status: Paid
+                Payment Status: {order.paymentStatus || 'N/A'}
               </Typography>
             </CardContent>
           </Card>

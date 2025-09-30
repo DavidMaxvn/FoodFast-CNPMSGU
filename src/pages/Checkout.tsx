@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -18,11 +18,16 @@ import {
   ListItem,
   ListItemText,
   ListItemAvatar,
-  Avatar
+  Avatar,
+  Checkbox,
+  Alert
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
+import { getDefaultAddress, createAddress, AddressDTO, AddressRequest } from '../services/address';
+import { createOrder as apiCreateOrder } from '../services/order';
+import { createVNPayPayment as apiCreateVNPayPayment } from '../services/payment';
 
 interface CartItem {
   id: string;
@@ -38,6 +43,13 @@ const Checkout: React.FC = () => {
   const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('vnpay');
+  const [useSavedAddress, setUseSavedAddress] = useState<'default' | 'new'>('default');
+  const [defaultAddress, setDefaultAddress] = useState<AddressDTO | null>(null);
+  const [useOnce, setUseOnce] = useState(false);
+  const [createdAddressId, setCreatedAddressId] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const [address, setAddress] = useState({
     fullName: '',
     phone: '',
@@ -47,9 +59,65 @@ const Checkout: React.FC = () => {
     notes: ''
   });
 
+  const auth = useSelector((state: RootState) => state.auth);
+  const userId = auth.user ? Number(auth.user.id) : null;
   const { items, totalAmount } = useSelector((state: RootState) => state.cart);
 
-  const handleNext = () => {
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      try {
+        const addr = await getDefaultAddress(userId);
+        setDefaultAddress(addr);
+        if (!addr) {
+          setUseSavedAddress('new');
+        }
+      } catch (e) {
+        setDefaultAddress(null);
+        setUseSavedAddress('new');
+      }
+    })();
+  }, [userId]);
+
+  const handleNext = async () => {
+    setErrorMsg(null);
+    if (activeStep === 0) {
+      // Validate and prepare address
+      try {
+        if (useSavedAddress === 'default') {
+          if (!defaultAddress) {
+            setErrorMsg('Không có địa chỉ mặc định. Vui lòng nhập địa chỉ mới.');
+            return;
+          }
+          setCreatedAddressId(defaultAddress.id);
+        } else {
+          // new address flow
+          if (!userId) {
+            setErrorMsg('Bạn cần đăng nhập để tạo địa chỉ.');
+            return;
+          }
+          if (!address.fullName || !address.phone || !address.street || !address.city) {
+            setErrorMsg('Vui lòng điền đầy đủ thông tin địa chỉ.');
+            return;
+          }
+          const payload: AddressRequest = {
+            receiverName: address.fullName,
+            phone: address.phone,
+            line1: address.street,
+            ward: undefined,
+            district: address.district,
+            city: address.city,
+            isDefault: !useOnce,
+          };
+          const created = await createAddress(userId, payload);
+          setCreatedAddressId(created.id);
+        }
+        setActiveStep((prev) => prev + 1);
+      } catch (err: any) {
+        setErrorMsg(err?.response?.data?.message || 'Không thể tạo/lấy địa chỉ.');
+      }
+      return;
+    }
     setActiveStep((prevActiveStep) => prevActiveStep + 1);
   };
 
@@ -67,103 +135,55 @@ const Checkout: React.FC = () => {
   };
 
   const handlePlaceOrder = async () => {
+    setSubmitting(true);
+    setErrorMsg(null);
     try {
-      // Validate required fields
-      if (!address.fullName || !address.phone || !address.street || !address.city || !address.district) {
-        alert('Vui lòng điền đầy đủ thông tin giao hàng');
+      if (!userId) {
+        setErrorMsg('Bạn cần đăng nhập.');
+        setSubmitting(false);
+        return;
+      }
+      const addressId = createdAddressId || defaultAddress?.id;
+      if (!addressId) {
+        setErrorMsg('Thiếu địa chỉ giao hàng.');
+        setSubmitting(false);
         return;
       }
 
-      // Create order data
-      const orderData = {
-        items: items,
-        totalAmount: totalAmount + 2, // Include delivery fee
-        deliveryAddress: address,
-        paymentMethod: paymentMethod,
-        orderDate: new Date().toISOString()
+      const orderItems = items.map((it) => ({
+        menuItemId: Number(it.id),
+        quantity: it.quantity,
+      }));
+
+      const payload = {
+        addressId,
+        paymentMethod: paymentMethod.toUpperCase(),
+        note: address.notes || undefined,
+        items: orderItems,
       };
 
+      const order = await apiCreateOrder(userId, payload);
+      const orderId = order.id || order?.data?.id || order?.orderId;
+
       if (paymentMethod === 'vnpay') {
-        // Redirect to VNPay payment gateway
-        const vnpayUrl = await createVNPayPayment(orderData);
-        window.location.href = vnpayUrl;
+        const returnUrl = `${window.location.origin}/payment/result`;
+        const vnpRes = await apiCreateVNPayPayment(orderId, { returnUrl, ipAddress: '127.0.0.1', locale: 'vn' });
+        const payUrl = vnpRes?.paymentUrl;
+        if (payUrl) {
+          window.location.href = payUrl;
+        } else {
+          throw new Error('Không lấy được URL thanh toán VNPay');
+        }
       } else {
-        // For COD, create order directly
-        const orderId = await createOrder(orderData);
-        navigate(`/payment-result?status=success&orderId=${orderId}&method=cod`);
+        navigate(`/payment/result?status=success&orderId=${orderId}&method=cod`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error placing order:', error);
-      navigate('/payment-result?status=failed');
+      setErrorMsg(error?.response?.data?.message || 'Đặt hàng thất bại');
+      navigate('/payment/result?status=failed');
+    } finally {
+      setSubmitting(false);
     }
-  };
-
-  const createVNPayPayment = async (orderData: any): Promise<string> => {
-    // In a real app, this would call your backend API
-    // For now, we'll simulate VNPay URL generation
-    
-    // Store order data for later retrieval
-    const orderId = `ORD_${Date.now()}`;
-    localStorage.setItem('pendingOrder', JSON.stringify({
-      ...orderData,
-      id: orderId,
-      status: 'pending'
-    }));
-
-    // Format date correctly for VNPay (YYYYMMDDHHMMSS)
-    const now = new Date();
-    const createDate = now.getFullYear().toString() +
-      (now.getMonth() + 1).toString().padStart(2, '0') +
-      now.getDate().toString().padStart(2, '0') +
-      now.getHours().toString().padStart(2, '0') +
-      now.getMinutes().toString().padStart(2, '0') +
-      now.getSeconds().toString().padStart(2, '0');
-
-    const vnpayParams = new URLSearchParams({
-      vnp_Version: '2.1.0',
-      vnp_Command: 'pay',
-      vnp_TmnCode: 'DEMO123', // Demo TMN code
-      vnp_Amount: Math.round(orderData.totalAmount * 23000 * 100).toString(), // Convert USD to VND cents (1 USD ≈ 23,000 VND)
-      vnp_CurrCode: 'VND',
-      vnp_TxnRef: orderId,
-      vnp_OrderInfo: encodeURIComponent(`Thanh toan don hang FastFood - ${orderId}`),
-      vnp_OrderType: 'other',
-      vnp_Locale: 'vn',
-      vnp_ReturnUrl: encodeURIComponent(`${window.location.origin}/payment-result`),
-      vnp_IpAddr: '127.0.0.1',
-      vnp_CreateDate: createDate
-    });
-
-    // In production, you would call your backend to create the secure VNPay URL
-    // return await fetch('/api/create-vnpay-payment', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(orderData)
-    // }).then(res => res.json()).then(data => data.paymentUrl);
-
-    // For demo purposes, simulate VNPay redirect and return to success page
-    // Since we can't actually integrate with VNPay sandbox without proper credentials,
-    // we'll simulate the payment process
-    setTimeout(() => {
-      window.location.href = `/payment-result?vnp_ResponseCode=00&vnp_TxnRef=${orderId}&vnp_Amount=${vnpayParams.get('vnp_Amount')}&vnp_OrderInfo=${vnpayParams.get('vnp_OrderInfo')}`;
-    }, 1000);
-
-    return `https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?${vnpayParams.toString()}`;
-  };
-
-  const createOrder = async (orderData: any): Promise<string> => {
-    // In a real app, this would call your backend API
-    // For now, we'll simulate order creation
-    const orderId = `ORD_${Date.now()}`;
-    
-    // Store order in localStorage for demo purposes
-    localStorage.setItem('currentOrder', JSON.stringify({
-      ...orderData,
-      id: orderId,
-      status: 'confirmed'
-    }));
-
-    return orderId;
   };
 
   const getStepContent = (step: number) => {
@@ -174,82 +194,122 @@ const Checkout: React.FC = () => {
             <Typography variant="h6" gutterBottom>
               Delivery Address
             </Typography>
-            <Grid container spacing={3}>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  required
-                  id="fullName"
-                  name="fullName"
-                  label="Full Name"
-                  fullWidth
-                  variant="outlined"
-                  value={address.fullName}
-                  onChange={handleAddressChange}
+            {errorMsg && (
+              <Alert severity="error" sx={{ mb: 2 }}>{errorMsg}</Alert>
+            )}
+            <FormControl component="fieldset" sx={{ mb: 2 }}>
+              <RadioGroup
+                row
+                value={useSavedAddress}
+                onChange={(e) => setUseSavedAddress(e.target.value as 'default' | 'new')}
+              >
+                <FormControlLabel
+                  value="default"
+                  control={<Radio />}
+                  label="Dùng địa chỉ mặc định"
+                  disabled={!defaultAddress}
                 />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  required
-                  id="phone"
-                  name="phone"
-                  label="Phone Number"
-                  fullWidth
-                  variant="outlined"
-                  value={address.phone}
-                  onChange={handleAddressChange}
+                <FormControlLabel
+                  value="new"
+                  control={<Radio />}
+                  label="Nhập địa chỉ mới"
                 />
+              </RadioGroup>
+            </FormControl>
+
+            {useSavedAddress === 'default' && defaultAddress && (
+              <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+                <Typography variant="subtitle1" gutterBottom>Địa chỉ mặc định</Typography>
+                <Typography gutterBottom>{defaultAddress.receiverName} - {defaultAddress.phone}</Typography>
+                <Typography gutterBottom>{defaultAddress.line1}</Typography>
+                <Typography gutterBottom>{[defaultAddress.ward, defaultAddress.district, defaultAddress.city].filter(Boolean).join(', ')}</Typography>
+              </Paper>
+            )}
+
+            {useSavedAddress === 'new' && (
+              <Grid container spacing={3}>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    required
+                    id="fullName"
+                    name="fullName"
+                    label="Full Name"
+                    fullWidth
+                    variant="outlined"
+                    value={address.fullName}
+                    onChange={handleAddressChange}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    required
+                    id="phone"
+                    name="phone"
+                    label="Phone Number"
+                    fullWidth
+                    variant="outlined"
+                    value={address.phone}
+                    onChange={handleAddressChange}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    required
+                    id="street"
+                    name="street"
+                    label="Street Address"
+                    fullWidth
+                    variant="outlined"
+                    value={address.street}
+                    onChange={handleAddressChange}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    required
+                    id="city"
+                    name="city"
+                    label="City"
+                    fullWidth
+                    variant="outlined"
+                    value={address.city}
+                    onChange={handleAddressChange}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    required
+                    id="district"
+                    name="district"
+                    label="District"
+                    fullWidth
+                    variant="outlined"
+                    value={address.district}
+                    onChange={handleAddressChange}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    id="notes"
+                    name="notes"
+                    label="Delivery Notes"
+                    fullWidth
+                    multiline
+                    rows={2}
+                    variant="outlined"
+                    placeholder="Any special instructions for delivery"
+                    value={address.notes}
+                    onChange={handleAddressChange}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <FormControlLabel
+                    control={<Checkbox checked={useOnce} onChange={(e) => setUseOnce(e.target.checked)} />}
+                    label="Chỉ dùng lần này (không đặt làm mặc định)"
+                  />
+                </Grid>
               </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  required
-                  id="street"
-                  name="street"
-                  label="Street Address"
-                  fullWidth
-                  variant="outlined"
-                  value={address.street}
-                  onChange={handleAddressChange}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  required
-                  id="city"
-                  name="city"
-                  label="City"
-                  fullWidth
-                  variant="outlined"
-                  value={address.city}
-                  onChange={handleAddressChange}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  required
-                  id="district"
-                  name="district"
-                  label="District"
-                  fullWidth
-                  variant="outlined"
-                  value={address.district}
-                  onChange={handleAddressChange}
-                />
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  id="notes"
-                  name="notes"
-                  label="Delivery Notes"
-                  fullWidth
-                  multiline
-                  rows={2}
-                  variant="outlined"
-                  placeholder="Any special instructions for delivery"
-                  value={address.notes}
-                  onChange={handleAddressChange}
-                />
-              </Grid>
-            </Grid>
+            )}
           </Box>
         );
       case 1:
@@ -265,47 +325,8 @@ const Checkout: React.FC = () => {
                 value={paymentMethod}
                 onChange={handlePaymentMethodChange}
               >
-                <Paper sx={{ mb: 2, p: 2, border: paymentMethod === 'vnpay' ? '2px solid #1976d2' : 'none' }}>
-                  <FormControlLabel
-                    value="vnpay"
-                    control={<Radio />}
-                    label={
-                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <img 
-                          src="https://cdn.haitrieu.com/wp-content/uploads/2022/10/Logo-VNPAY-QR-1.png" 
-                          alt="VNPay" 
-                          width="60" 
-                          style={{ marginRight: '10px' }}
-                        />
-                        <Typography>VNPay</Typography>
-                      </Box>
-                    }
-                  />
-                </Paper>
-                <Paper sx={{ mb: 2, p: 2, border: paymentMethod === 'cod' ? '2px solid #1976d2' : 'none' }}>
-                  <FormControlLabel
-                    value="cod"
-                    control={<Radio />}
-                    label={
-                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <Box 
-                          sx={{ 
-                            width: 60, 
-                            height: 40, 
-                            bgcolor: 'grey.300', 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            mr: 1
-                          }}
-                        >
-                          <Typography variant="body2">CASH</Typography>
-                        </Box>
-                        <Typography>Cash on Delivery</Typography>
-                      </Box>
-                    }
-                  />
-                </Paper>
+                <FormControlLabel value="vnpay" control={<Radio />} label="VNPay" />
+                <FormControlLabel value="cod" control={<Radio />} label="Cash on Delivery" />
               </RadioGroup>
             </FormControl>
           </Box>
@@ -352,12 +373,23 @@ const Checkout: React.FC = () => {
                 <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
                   Delivery Address
                 </Typography>
-                <Typography gutterBottom>{address.fullName}</Typography>
-                <Typography gutterBottom>{address.phone}</Typography>
-                <Typography gutterBottom>{address.street}</Typography>
-                <Typography gutterBottom>{address.city}, {address.district}</Typography>
-                {address.notes && (
-                  <Typography gutterBottom>Notes: {address.notes}</Typography>
+                {useSavedAddress === 'default' && defaultAddress ? (
+                  <>
+                    <Typography gutterBottom>{defaultAddress.receiverName}</Typography>
+                    <Typography gutterBottom>{defaultAddress.phone}</Typography>
+                    <Typography gutterBottom>{defaultAddress.line1}</Typography>
+                    <Typography gutterBottom>{[defaultAddress.ward, defaultAddress.district, defaultAddress.city].filter(Boolean).join(', ')}</Typography>
+                  </>
+                ) : (
+                  <>
+                    <Typography gutterBottom>{address.fullName}</Typography>
+                    <Typography gutterBottom>{address.phone}</Typography>
+                    <Typography gutterBottom>{address.street}</Typography>
+                    <Typography gutterBottom>{address.city}, {address.district}</Typography>
+                    {address.notes && (
+                      <Typography gutterBottom>Notes: {address.notes}</Typography>
+                    )}
+                  </>
                 )}
               </Grid>
               <Grid item container direction="column" xs={12} sm={6}>
@@ -406,8 +438,9 @@ const Checkout: React.FC = () => {
             variant="contained"
             color="primary"
             onClick={handlePlaceOrder}
+            disabled={submitting}
           >
-            Place Order
+            {submitting ? 'Processing...' : 'Place Order'}
           </Button>
         ) : (
           <Button

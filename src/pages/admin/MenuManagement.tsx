@@ -19,8 +19,7 @@ import {
   Select,
   MenuItem,
   Avatar,
-  Chip,
-  SelectChangeEvent
+  Chip
 } from '@mui/material';
 import {
   Add,
@@ -70,7 +69,7 @@ const MenuManagement: React.FC = () => {
     setCurrentItem(null);
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | { name?: string; value: unknown }>) => {
     const { name, value } = e.target;
     setCurrentItem({
       ...currentItem,
@@ -78,15 +77,7 @@ const MenuManagement: React.FC = () => {
     });
   };
 
-  const handleSelectChange = (e: SelectChangeEvent<any>) => {
-    const { name, value } = e.target;
-    setCurrentItem({
-      ...currentItem,
-      [name as string]: value
-    });
-  };
-
-  const handleAvailabilityChange = (e: SelectChangeEvent<'true' | 'false'>) => {
+  const handleAvailabilityChange = (e: React.ChangeEvent<{ name?: string; value: unknown }>) => {
     const { value } = e.target;
     setCurrentItem({
       ...currentItem,
@@ -242,13 +233,13 @@ const MenuManagement: React.FC = () => {
               />
             </Grid>
             
-            <Grid item xs={12}>
+            {/* <Grid item xs={12}>
               <FormControl fullWidth margin="normal">
                 <InputLabel>Category</InputLabel>
                 <Select
                   name="category"
                   value={currentItem?.category || ''}
-                  onChange={handleSelectChange}
+                  onChange={handleInputChange}
                   label="Category"
                   required
                 >
@@ -259,11 +250,10 @@ const MenuManagement: React.FC = () => {
                   ))}
                 </Select>
               </FormControl>
-            </Grid>
+            </Grid> */}
             
-            <Grid item xs={12}>
+            {/* <Grid item xs={12}>
               <TextField
-              
                 fullWidth
                 label="Price"
                 name="price"
@@ -277,8 +267,8 @@ const MenuManagement: React.FC = () => {
                 }}
               />
             </Grid>
-            
-            <Grid item xs={12}>
+             */}
+            {/* <Grid item xs={12}>
               <FormControl fullWidth margin="normal">
                 <InputLabel>Availability</InputLabel>
                 <Select
@@ -291,7 +281,7 @@ const MenuManagement: React.FC = () => {
                   <MenuItem value="false">Unavailable</MenuItem>
                 </Select>
               </FormControl>
-            </Grid>
+            </Grid> */}
             
             <Grid item xs={12} sx={{ mt: 2 }}>
               <Button
