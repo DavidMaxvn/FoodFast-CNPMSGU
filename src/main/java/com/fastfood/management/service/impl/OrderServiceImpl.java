@@ -57,7 +57,7 @@ public class OrderServiceImpl implements OrderService {
         for (OrderRequest.OrderItemRequest itemRequest : orderRequest.getItems()) {
             MenuItem menuItem = menuItemRepository.findById(itemRequest.getMenuItemId())
                     .orElseThrow(() -> new EntityNotFoundException("Menu item not found"));
-            
+            // check trạng thái (có sẳn) có bật hay không
             if (!menuItem.isAvailable()) {
                 throw new IllegalStateException("Menu item " + menuItem.getName() + " is not available");
             }
@@ -82,12 +82,13 @@ public class OrderServiceImpl implements OrderService {
         // Create order activity
         OrderActivity activity = OrderActivity.builder()
                 .order(order)
-                .fromStatus(null)
+                .fromStatus(Order.OrderStatus.CREATED)
                 .toStatus(Order.OrderStatus.CREATED)
+                .reason("Order created")
                 .build();
         orderActivityRepository.save(activity);
         
-        // Bỏ gửi WebSocket trong phiên bản cơ bản
+        // 
         // webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
         
         return order;

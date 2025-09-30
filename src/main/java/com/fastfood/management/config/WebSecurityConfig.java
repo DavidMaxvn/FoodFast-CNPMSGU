@@ -37,8 +37,12 @@ public class WebSecurityConfig {
       .csrf().disable()
       .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS).and()
       .authorizeHttpRequests()
-        .requestMatchers("/api/auth/**").permitAll()
-        .requestMatchers(HttpMethod.GET, "/api/public/**").permitAll()
+
+       .requestMatchers("/auth/**").permitAll()
+        .requestMatchers(HttpMethod.GET, "/public/**").permitAll()
+        // Cho phép VNPay tạo payment và trả về (callback) không cần JWT
+        .requestMatchers(HttpMethod.POST, "/payments/vnpay/**").permitAll()
+        .requestMatchers(HttpMethod.GET, "/payments/vnpay/return").permitAll()
         .anyRequest().authenticated();
 
     // Thêm JWT filter trước UsernamePasswordAuthenticationFilter
@@ -55,12 +59,13 @@ public class WebSecurityConfig {
   @Bean
   public CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration configuration = new CorsConfiguration();
+
     configuration.setAllowedOrigins(Arrays.asList("*"));
     configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-    configuration.setAllowedHeaders(Arrays.asList("authorization", "content-type", "x-auth-token"));
-    configuration.setExposedHeaders(Arrays.asList("x-auth-token"));
-    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-    source.registerCorsConfiguration("/**", configuration);
-    return source;
-  }
+    configuration.setAllowedHeaders(Arrays.asList("*"));
+     configuration.setExposedHeaders(Arrays.asList("x-auth-token"));
+     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+     source.registerCorsConfiguration("/**", configuration);
+     return source;
+   }
 }

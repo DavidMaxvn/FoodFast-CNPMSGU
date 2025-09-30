@@ -18,7 +18,6 @@ public class DeliveryController {
 
     private final DeliveryService deliveryService;
 
-    // Bỏ @PreAuthorize và AuthenticationPrincipal ở phiên bản cơ bản
 
     @GetMapping
     public ResponseEntity<List<DeliveryResponse>> getReadyForDelivery() {

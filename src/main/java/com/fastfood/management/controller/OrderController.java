@@ -27,7 +27,7 @@ public class OrderController {
     public ResponseEntity<?> createOrder(
             @Valid @RequestBody OrderRequest orderRequest,
             @RequestParam("userId") Long userId) {
-        // Bản cơ bản: nhận userId trực tiếp từ request, nạp User từ DB
+    
         User currentUser = userRepository.findById(userId).orElse(null);
         if (currentUser == null) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)

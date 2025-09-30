@@ -38,6 +38,7 @@ public class DeliveryEvent {
     private Double heading;
     
     @Column(name = "battery_pct")
+    
     private Double batteryPct;
     
     @Column(nullable = false)

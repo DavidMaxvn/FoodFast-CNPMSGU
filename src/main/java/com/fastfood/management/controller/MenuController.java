@@ -49,7 +49,7 @@ public class MenuController {
     }
 
     // 
-    //  search để tìm món có tên chứa từ khoá, chỉ trả về món đang mở bán.
+    // filter  search để tìm món có tên chứa từ khoá
     @GetMapping("/search")
     public ResponseEntity<List<MenuItem>> searchByName(
             @RequestParam String name,
