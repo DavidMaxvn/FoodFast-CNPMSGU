@@ -28,7 +28,7 @@ import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { getOrderById } from '../services/order';
-
+import TrackingMap from '../components/TrackingMap';
 // Order status steps
 const steps = ['Confirmed', 'Preparing', 'Ready for Delivery', 'On the Way', 'Delivered'];
 const statusToStep = {
@@ -213,21 +213,10 @@ const OrderTracking: React.FC = () => {
               </Typography>
             </Box>
             
-            <Box 
-              sx={{ 
-                height: 200, 
-                bgcolor: 'grey.200', 
-                borderRadius: 1, 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                mb: 2
-              }}
-            >
-              <Typography variant="body2" color="text.secondary">
-                Map View (Will integrate with real map service)
-              </Typography>
-            </Box>
+            <TrackingMap 
+              orderId={order.id?.toString()}
+              height={200}
+            />
           </Paper>
           
           <Paper sx={{ p: 3 }}>
