@@ -6,14 +6,17 @@ export interface PaymentRequestPayload {
   locale?: string;
 }
 
-export interface VNPayResponseDTO {
+export interface VNPayResponse {
   paymentUrl: string;
   transactionReference: string;
 }
 
-export const createVNPayPayment = async (orderId: number, payload: PaymentRequestPayload): Promise<VNPayResponseDTO> => {
+export const createVNPayPayment = async (
+  orderId: number,
+  payload: PaymentRequestPayload
+): Promise<VNPayResponse> => {
   const res = await api.post(`/payments/vnpay/${orderId}`, payload);
-  return res.data as VNPayResponseDTO; // backend returns { paymentUrl, transactionReference }
+  return res.data as VNPayResponse;
 };
 
 export const getPaymentByOrder = async (orderId: number) => {

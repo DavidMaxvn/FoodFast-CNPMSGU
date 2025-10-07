@@ -29,6 +29,7 @@ import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { getOrderById } from '../services/order';
 import TrackingMap from '../components/TrackingMap';
+
 // Order status steps
 const steps = ['Confirmed', 'Preparing', 'Ready for Delivery', 'On the Way', 'Delivered'];
 const statusToStep = {
@@ -213,10 +214,9 @@ const OrderTracking: React.FC = () => {
               </Typography>
             </Box>
             
-            <TrackingMap 
-              orderId={order.id?.toString()}
-              height={200}
-            />
+            <Box sx={{ height: 300, borderRadius: 1, overflow: 'hidden', mb: 2 }}>
+              <TrackingMap height={300} />
+            </Box>
           </Paper>
           
           <Paper sx={{ p: 3 }}>

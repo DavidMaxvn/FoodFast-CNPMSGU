@@ -1,235 +1,70 @@
-import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
-import { Box, Typography, CircularProgress, Alert } from '@mui/material';
-import L from 'leaflet';
+import React, { useEffect, useMemo, useState } from 'react';
+import { MapContainer, TileLayer, Polyline, CircleMarker } from 'react-leaflet';
+import { Box } from '@mui/material';
 import 'leaflet/dist/leaflet.css';
 
-// Fix for default markers in react-leaflet
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
-
-// Custom icons
-const droneIcon = new L.Icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/2343/2343627.png',
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-  popupAnchor: [0, -16],
-});
-
-const customerIcon = new L.Icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
-  iconSize: [32, 32],
-  iconAnchor: [16, 16],
-  popupAnchor: [0, -16],
-});
-
-interface LocationPoint {
-  lat: number;
-  lng: number;
-}
+type LatLng = { lat: number; lng: number };
 
 interface TrackingMapProps {
-  orderId?: string;
-  customerLocation?: LocationPoint;
-  droneLocation?: LocationPoint;
   height?: number;
+  start?: LatLng; // vị trí hiện tại (drone)
+  end?: LatLng;   // điểm đến (khách hàng)
 }
 
-// OSRM API service
-const getRoute = async (start: LocationPoint, end: LocationPoint): Promise<LocationPoint[] | null> => {
-  try {
-    const response = await fetch(
-      `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`
-    );
-    
-    if (!response.ok) {
-      throw new Error('OSRM API request failed');
-    }
-    
-    const data = await response.json();
-    
-    if (data.routes && data.routes.length > 0) {
-      // Convert coordinates from [lng, lat] to [lat, lng]
-      return data.routes[0].geometry.coordinates.map((coord: [number, number]) => ({
-        lat: coord[1],
-        lng: coord[0]
-      }));
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('OSRM routing error:', error);
-    return null;
+// Tạo route giả bằng cách nội suy giữa hai điểm
+function buildMockRoute(start: LatLng, end: LatLng, steps = 200): LatLng[] {
+  const pts: LatLng[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    pts.push({
+      lat: start.lat + (end.lat - start.lat) * t,
+      lng: start.lng + (end.lng - start.lng) * t,
+    });
   }
-};
+  return pts;
+}
 
 const TrackingMap: React.FC<TrackingMapProps> = ({
-  orderId,
-  customerLocation,
-  droneLocation,
-  height = 400
+  height = 300,
+  start,
+  end,
 }) => {
-  const [routeCoordinates, setRouteCoordinates] = useState<LocationPoint[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const startPoint = useMemo<LatLng>(() => start || { lat: 10.8331, lng: 106.6197 }, [start]);
+  const endPoint = useMemo<LatLng>(() => end || { lat: 10.8231, lng: 106.6297 }, [end]);
+  const route = useMemo(() => buildMockRoute(startPoint, endPoint, 300), [startPoint, endPoint]);
 
-  // Default locations for demo (Ho Chi Minh City area)
-  const defaultCustomer: LocationPoint = customerLocation || { lat: 10.8231, lng: 106.6297 };
-  const defaultDrone: LocationPoint = droneLocation || { lat: 10.8331, lng: 106.6197 };
-
-  // Simulate drone movement for demo
-  const [currentDroneLocation, setCurrentDroneLocation] = useState<LocationPoint>(defaultDrone);
+  const [index, setIndex] = useState(0);
+  const drone = route[Math.min(index, route.length - 1)];
 
   useEffect(() => {
-    // Simulate drone movement every 3 seconds
-    const interval = setInterval(() => {
-      setCurrentDroneLocation(prev => ({
-        lat: prev.lat + (Math.random() - 0.5) * 0.001,
-        lng: prev.lng + (Math.random() - 0.5) * 0.001
-      }));
-    }, 3000);
+    const timer = setInterval(() => {
+      setIndex((i) => (i < route.length - 1 ? i + 1 : i));
+    }, 500); // di chuyển mỗi 0.5s
+    return () => clearInterval(timer);
+  }, [route.length]);
 
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    // Get route when locations are available
-    const fetchRoute = async () => {
-      if (currentDroneLocation && defaultCustomer) {
-        setLoading(true);
-        setError(null);
-        
-        const route = await getRoute(currentDroneLocation, defaultCustomer);
-        
-        if (route) {
-          setRouteCoordinates(route);
-        } else {
-          setError('Không thể tải route từ OSRM API');
-        }
-        
-        setLoading(false);
-      }
-    };
-
-    fetchRoute();
-  }, [currentDroneLocation, defaultCustomer]);
-
-  // Calculate map center
-  const mapCenter: LocationPoint = {
-    lat: (currentDroneLocation.lat + defaultCustomer.lat) / 2,
-    lng: (currentDroneLocation.lng + defaultCustomer.lng) / 2
-  };
+  const center = useMemo<LatLng>(() => ({
+    lat: (startPoint.lat + endPoint.lat) / 2,
+    lng: (startPoint.lng + endPoint.lng) / 2,
+  }), [startPoint, endPoint]);
 
   return (
     <Box sx={{ position: 'relative', height, width: '100%' }}>
-      {loading && (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 10,
-            right: 10,
-            zIndex: 1000,
-            bgcolor: 'white',
-            p: 1,
-            borderRadius: 1,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1
-          }}
-        >
-          <CircularProgress size={20} />
-          <Typography variant="caption">Đang tải route...</Typography>
-        </Box>
-      )}
-
-      {error && (
-        <Box sx={{ position: 'absolute', top: 10, left: 10, right: 10, zIndex: 1000 }}>
-          <Alert severity="warning" variant="filled">
-            {error}
-          </Alert>
-        </Box>
-      )}
-
-      <MapContainer
-        center={mapCenter}
-        zoom={14}
-        style={{ height: '100%', width: '100%' }}
-      >
-        {/* OpenStreetMap Tile Layer - MIỄN PHÍ */}
+      <MapContainer center={center} zoom={14} style={{ height: '100%', width: '100%' }}>
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         />
 
-        {/* Drone Marker */}
-        <Marker position={currentDroneLocation} icon={droneIcon}>
-          <Popup>
-            <Box>
-              <Typography variant="subtitle2">🚁 Drone Giao Hàng</Typography>
-              <Typography variant="caption">
-                Đơn hàng: #{orderId || 'DEMO'}
-              </Typography>
-              <br />
-              <Typography variant="caption">
-                Vị trí: {currentDroneLocation.lat.toFixed(4)}, {currentDroneLocation.lng.toFixed(4)}
-              </Typography>
-            </Box>
-          </Popup>
-        </Marker>
+        {/* Route giả */}
+        <Polyline positions={route} color="#1976d2" weight={4} opacity={0.8} />
 
-        {/* Customer Marker */}
-        <Marker position={defaultCustomer} icon={customerIcon}>
-          <Popup>
-            <Box>
-              <Typography variant="subtitle2">🏠 Địa Chỉ Giao Hàng</Typography>
-              <Typography variant="caption">
-                Khách hàng đang chờ
-              </Typography>
-              <br />
-              <Typography variant="caption">
-                Vị trí: {defaultCustomer.lat.toFixed(4)}, {defaultCustomer.lng.toFixed(4)}
-              </Typography>
-            </Box>
-          </Popup>
-        </Marker>
+        {/* Drone hiện tại */}
+        <CircleMarker center={[drone.lat, drone.lng]} radius={8} pathOptions={{ color: '#d32f2f', fillColor: '#d32f2f', fillOpacity: 0.9 }} />
 
-        {/* Route Polyline */}
-        {routeCoordinates.length > 0 && (
-          <Polyline
-            positions={routeCoordinates}
-            color="#2196f3"
-            weight={4}
-            opacity={0.7}
-          />
-        )}
+        {/* Điểm đến */}
+        <CircleMarker center={[endPoint.lat, endPoint.lng]} radius={10} pathOptions={{ color: '#2e7d32', fillColor: '#2e7d32', fillOpacity: 0.9 }} />
       </MapContainer>
-
-      {/* Map Info */}
-      <Box
-        sx={{
-          position: 'absolute',
-          bottom: 10,
-          left: 10,
-          bgcolor: 'rgba(255, 255, 255, 0.9)',
-          p: 1,
-          borderRadius: 1,
-          zIndex: 1000
-        }}
-      >
-        <Typography variant="caption" display="block">
-          🗺️ OpenStreetMap (Miễn phí)
-        </Typography>
-        <Typography variant="caption" display="block">
-           OSRM Routing API
-        </Typography>
-        <Typography variant="caption" display="block">
-          📍 Real-time GPS Simulation
-        </Typography>
-      </Box>
     </Box>
   );
 };

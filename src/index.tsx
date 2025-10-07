@@ -7,6 +7,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import App from './App';
 import { store } from './store';
 import './index.css';
+import 'leaflet/dist/leaflet.css';
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement

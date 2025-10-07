@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { 
   Grid, 
   Card, 
@@ -17,83 +17,30 @@ import { Add, Search } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
-import { fetchMenuStart, fetchMenuSuccess, filterByCategory, searchItems } from '../store/slices/menuSlice';
+import { fetchMenuStart, fetchMenuSuccess, fetchMenuFailure, filterByCategory, searchItems } from '../store/slices/menuSlice';
 import { addToCart } from '../store/slices/cartSlice';
+import { fetchMenuItems } from '../services/menu';
 
-// Mock data for initial development
-const mockMenuItems = [
-  {
-    id: '1',
-    
-    name: 'Cheeseburger',
-    description: 'Juicy beef patty with melted cheese, lettuce, tomato, and special sauce',
-    price: 5.99,
-    image: 'https://source.unsplash.com/random/300x200/?cheeseburger',
-    category: 'Burgers',
-    available: true
-  },
-  {
-    id: '2',
-    name: 'Chicken Wings',
-    description: 'Crispy fried chicken wings with your choice of sauce',
-    price: 7.99,
-    image: 'https://source.unsplash.com/random/300x200/?wings',
-    category: 'Chicken',
-    available: true
-  },
-  {
-    id: '3',
-    name: 'French Fries',
-    description: 'Crispy golden fries seasoned with salt',
-    price: 2.99,
-    image: 'https://source.unsplash.com/random/300x200/?fries',
-    category: 'Sides',
-    available: true
-  },
-  {
-    id: '4',
-    name: 'Coca Cola',
-    description: 'Refreshing cola drink',
-    price: 1.99,
-    image: 'https://source.unsplash.com/random/300x200/?cola',
-    category: 'Drinks',
-    available: true
-  },
-  {
-    id: '5',
-    name: 'Veggie Burger',
-    description: 'Plant-based patty with fresh vegetables',
-    price: 6.99,
-    image: 'https://source.unsplash.com/random/300x200/?veggieburger',
-    category: 'Burgers',
-    available: true
-  },
-  {
-    id: '6',
-    name: 'Chicken Sandwich',
-    description: 'Grilled chicken breast with lettuce and mayo',
-    price: 5.49,
-    image: 'https://source.unsplash.com/random/300x200/?chickensandwich',
-    category: 'Chicken',
-    available: true
-  }
-];
+// Dữ liệu lấy từ backend, không dùng mock
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { filteredItems, categories, isLoading } = useSelector((state: RootState) => state.menu);
+  const { filteredItems, items, isLoading } = useSelector((state: RootState) => state.menu);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
 
   // Simulate fetching menu items from API
   useEffect(() => {
     dispatch(fetchMenuStart());
-    
-    // Simulate API call with mock data
-    setTimeout(() => {
-      dispatch(fetchMenuSuccess(mockMenuItems));
-    }, 1000);
+    (async () => {
+      try {
+        const data = await fetchMenuItems(0, 12);
+        dispatch(fetchMenuSuccess(data));
+      } catch (e: any) {
+        dispatch(fetchMenuFailure(e?.message || 'Failed to load menu'));
+      }
+    })();
   }, [dispatch]);
 
   const handleCategoryFilter = (category: string) => {
@@ -115,6 +62,12 @@ const Home: React.FC = () => {
       image: item.image
     }));
   };
+
+  const derivedCategories = useMemo(() => {
+    const set = new Set<string>();
+    items.forEach((i) => { if (i.category) set.add(i.category); });
+    return Array.from(set);
+  }, [items]);
 
   return (
     <Box>
@@ -144,7 +97,7 @@ const Home: React.FC = () => {
             color={selectedCategory === 'all' ? 'primary' : 'default'}
             clickable
           />
-          {categories.map((category) => (
+          {derivedCategories.map((category) => (
             <Chip 
               key={category} 
               label={category} 
@@ -184,6 +137,13 @@ const Home: React.FC = () => {
                   height="200"
                   image={item.image}
                   alt={item.name}
+                  loading="lazy"
+                  onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                    const target = e.currentTarget;
+                    if (target.src && !target.src.endsWith('/placeholder-item.svg')) {
+                      target.src = '/placeholder-item.svg';
+                    }
+                  }}
                   sx={{ cursor: 'pointer' }}
                   onClick={() => navigate(`/menu/${item.id}`)}
                 />
