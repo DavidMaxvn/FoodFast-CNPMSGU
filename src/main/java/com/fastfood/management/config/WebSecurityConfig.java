@@ -37,8 +37,14 @@ public class WebSecurityConfig {
       .csrf().disable()
       .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS).and()
       .authorizeHttpRequests()
-
        .requestMatchers("/auth/**").permitAll()
+        // Error page should be publicly accessible to avoid 403 loops
+        .requestMatchers(HttpMethod.GET, "/error").permitAll()
+        // Public static resources (served via resource handler)
+        .requestMatchers(HttpMethod.GET, "/images/**").permitAll()
+        .requestMatchers(HttpMethod.GET, "/api/images/**").permitAll()
+        // Public menu browsing endpoints
+        .requestMatchers(HttpMethod.GET, "/menu/**").permitAll()
         .requestMatchers(HttpMethod.GET, "/public/**").permitAll()
         // Cho phép VNPay tạo payment và trả về (callback) không cần JWT
         .requestMatchers(HttpMethod.POST, "/payments/vnpay/**").permitAll()
