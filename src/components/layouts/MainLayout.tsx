@@ -39,6 +39,31 @@ const MainLayout: React.FC = () => {
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <Button 
               color="inherit" 
+              onClick={() => navigate('/stores')}
+              sx={{ mr: 2 }}
+            >
+              Stores
+            </Button>
+            {isAuthenticated && (
+              <>
+                <Button 
+                  color="inherit" 
+                  onClick={() => navigate('/orders/history')}
+                  sx={{ mr: 2 }}
+                >
+                  Orders
+                </Button>
+                <Button 
+                  color="inherit" 
+                  onClick={() => navigate('/notifications')}
+                  sx={{ mr: 2 }}
+                >
+                  Notifications
+                </Button>
+              </>
+            )}
+            <Button 
+              color="inherit" 
               onClick={() => navigate('/cart')}
               sx={{ mr: 2 }}
             >

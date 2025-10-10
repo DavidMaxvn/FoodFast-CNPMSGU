@@ -25,9 +25,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
-import { getDefaultAddress, createAddress, AddressDTO, AddressRequest } from '../services/address';
-import { createOrder as apiCreateOrder } from '../services/order';
-import { createVNPayPayment as apiCreateVNPayPayment } from '../services/payment';
+import { AddressDTO } from '../services/address';
 
 interface CartItem {
   id: string;
@@ -46,7 +44,6 @@ const Checkout: React.FC = () => {
   const [useSavedAddress, setUseSavedAddress] = useState<'default' | 'new'>('default');
   const [defaultAddress, setDefaultAddress] = useState<AddressDTO | null>(null);
   const [useOnce, setUseOnce] = useState(false);
-  const [createdAddressId, setCreatedAddressId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -65,18 +62,20 @@ const Checkout: React.FC = () => {
 
   useEffect(() => {
     if (!userId) return;
-    (async () => {
-      try {
-        const addr = await getDefaultAddress(userId);
+    try {
+      const raw = localStorage.getItem(`address:${userId}:default`);
+      if (raw) {
+        const addr = JSON.parse(raw) as AddressDTO;
         setDefaultAddress(addr);
-        if (!addr) {
-          setUseSavedAddress('new');
-        }
-      } catch (e) {
+        setUseSavedAddress('default');
+      } else {
         setDefaultAddress(null);
         setUseSavedAddress('new');
       }
-    })();
+    } catch {
+      setDefaultAddress(null);
+      setUseSavedAddress('new');
+    }
   }, [userId]);
 
   const handleNext = async () => {
@@ -89,7 +88,6 @@ const Checkout: React.FC = () => {
             setErrorMsg('Không có địa chỉ mặc định. Vui lòng nhập địa chỉ mới.');
             return;
           }
-          setCreatedAddressId(defaultAddress.id);
         } else {
           // new address flow
           if (!userId) {
@@ -100,17 +98,21 @@ const Checkout: React.FC = () => {
             setErrorMsg('Vui lòng điền đầy đủ thông tin địa chỉ.');
             return;
           }
-          const payload: AddressRequest = {
+          const newAddress = {
             receiverName: address.fullName,
             phone: address.phone,
             line1: address.street,
-            ward: undefined,
+            ward: '',
             district: address.district,
             city: address.city,
-            isDefault: !useOnce,
           };
-          const created = await createAddress(userId, payload);
-          setCreatedAddressId(created.id);
+          // Save as default if not 'use once'
+          if (!useOnce) {
+            try {
+              localStorage.setItem(`address:${userId}:default`, JSON.stringify(newAddress));
+              setDefaultAddress(newAddress as unknown as AddressDTO);
+            } catch {}
+          }
         }
         setActiveStep((prev) => prev + 1);
       } catch (err: any) {
@@ -143,11 +145,31 @@ const Checkout: React.FC = () => {
         setSubmitting(false);
         return;
       }
-      const addressId = createdAddressId || defaultAddress?.id;
-      if (!addressId) {
-        setErrorMsg('Thiếu địa chỉ giao hàng.');
+      // Mock address handling: ensure either default or new address is present
+      if (useSavedAddress === 'default' && !defaultAddress) {
+        setErrorMsg('Thiếu địa chỉ mặc định. Vui lòng nhập địa chỉ mới.');
         setSubmitting(false);
         return;
+      }
+      if (useSavedAddress === 'new') {
+        const requiredFilled = address.fullName && address.phone && address.street && address.city;
+        if (!requiredFilled) {
+          setErrorMsg('Vui lòng nhập đầy đủ địa chỉ giao hàng.');
+          setSubmitting(false);
+          return;
+        }
+        // Save as default if not 'use once'
+        if (!useOnce && userId) {
+          const toSave = {
+            receiverName: address.fullName,
+            phone: address.phone,
+            line1: address.street,
+            ward: '',
+            district: address.district,
+            city: address.city,
+          };
+          localStorage.setItem(`address:${userId}:default`, JSON.stringify(toSave));
+        }
       }
 
       const orderItems = items.map((it) => ({
@@ -155,28 +177,23 @@ const Checkout: React.FC = () => {
         quantity: it.quantity,
       }));
 
-      const payload = {
-        addressId,
-        paymentMethod: paymentMethod.toUpperCase(),
-        note: address.notes || undefined,
+      // MOCK: Create local order and skip API calls
+      const orderId = Date.now();
+      const mockOrder = {
+        id: orderId,
+        status: 'confirmed',
+        paymentMethod: paymentMethod,
+        paymentStatus: paymentMethod === 'vnpay' ? 'paid' : 'cod',
+        orderDate: new Date().toISOString(),
+        totalAmount: totalAmount + 2,
         items: orderItems,
+        address: useSavedAddress === 'default' && defaultAddress ?
+          `${defaultAddress.receiverName} - ${defaultAddress.phone}, ${defaultAddress.line1}, ${[defaultAddress.ward, defaultAddress.district, defaultAddress.city].filter(Boolean).join(', ')}` :
+          `${address.fullName} - ${address.phone}, ${address.street}, ${[address.district, address.city].filter(Boolean).join(', ')}`,
       };
-
-      const order = await apiCreateOrder(userId, payload);
-      const orderId = order.id || order?.data?.id || order?.orderId;
-
-      if (paymentMethod === 'vnpay') {
-        const returnUrl = `${window.location.origin}/payment/result`;
-        const vnpRes = await apiCreateVNPayPayment(orderId, { returnUrl, ipAddress: '127.0.0.1', locale: 'vn' });
-        const payUrl = vnpRes?.paymentUrl;
-        if (payUrl) {
-          window.location.href = payUrl;
-        } else {
-          throw new Error('Không lấy được URL thanh toán VNPay');
-        }
-      } else {
-        navigate(`/payment/result?status=success&orderId=${orderId}&method=cod`);
-      }
+      localStorage.setItem('currentOrder', JSON.stringify(mockOrder));
+      // Redirect to mock payment result
+      navigate(`/payment/result?status=success&orderId=${orderId}&method=${paymentMethod}`);
     } catch (error: any) {
       console.error('Error placing order:', error);
       setErrorMsg(error?.response?.data?.message || 'Đặt hàng thất bại');

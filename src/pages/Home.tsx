@@ -19,9 +19,15 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { fetchMenuStart, fetchMenuSuccess, fetchMenuFailure, filterByCategory, searchItems } from '../store/slices/menuSlice';
 import { addToCart } from '../store/slices/cartSlice';
-import { fetchMenuItems } from '../services/menu';
+// import { fetchMenuItems } from '../services/menu';
 
-// Dữ liệu lấy từ backend, không dùng mock
+// Dùng mock menu để test chức năng thêm vào giỏ
+const MOCK_HOME_MENU = [
+  { id: 'm1', name: 'Cheeseburger', description: 'Burger phô mai thơm ngon', price: 59000, image: 'https://source.unsplash.com/random/600x400/?burger', category: 'Burgers', available: true },
+  { id: 'm2', name: 'French Fries', description: 'Khoai tây chiên giòn', price: 29000, image: 'https://source.unsplash.com/random/600x400/?fries', category: 'Sides', available: true },
+  { id: 'm3', name: 'Fried Chicken', description: 'Gà rán giòn tan', price: 89000, image: 'https://source.unsplash.com/random/600x400/?chicken', category: 'Chicken', available: true },
+  { id: 'm4', name: 'Coca Cola', description: 'Nước uống có ga', price: 19000, image: 'https://source.unsplash.com/random/600x400/?cola', category: 'Drinks', available: true },
+];
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
@@ -30,17 +36,10 @@ const Home: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
 
-  // Simulate fetching menu items from API
+  // Load mock items without API
   useEffect(() => {
     dispatch(fetchMenuStart());
-    (async () => {
-      try {
-        const data = await fetchMenuItems(0, 12);
-        dispatch(fetchMenuSuccess(data));
-      } catch (e: any) {
-        dispatch(fetchMenuFailure(e?.message || 'Failed to load menu'));
-      }
-    })();
+    dispatch(fetchMenuSuccess(MOCK_HOME_MENU as any));
   }, [dispatch]);
 
   const handleCategoryFilter = (category: string) => {

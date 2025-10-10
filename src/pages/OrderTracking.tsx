@@ -27,7 +27,7 @@ import {
 import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
-import { getOrderById } from '../services/order';
+// import { getOrderById } from '../services/order';
 import TrackingMap from '../components/TrackingMap';
 
 // Order status steps
@@ -86,7 +86,7 @@ const OrderTracking: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchOrder = async () => {
+    const loadMockOrder = () => {
       if (!id || !userId) {
         setLoading(false);
         setError('Please login to view your order.');
@@ -95,41 +95,58 @@ const OrderTracking: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const raw = await getOrderById(userId, Number(id));
-        // Map backend Order entity to UI model
-        const uiStatus: StatusKey = backendToUIStatus[raw.status] || 'confirmed';
-        const address = raw.address ? [
-          raw.address.line1,
-          [raw.address.ward, raw.address.district, raw.address.city].filter(Boolean).join(', ')
-        ].filter(Boolean).join(', ') : 'N/A';
-        const items: OrderItemUI[] = Array.isArray(raw.orderItems) ? raw.orderItems.map((it: any) => ({
-          id: it.id,
-          name: it.menuItem?.name || 'Item',
-          quantity: it.quantity,
-          price: Number(it.unitPrice ?? it.menuItem?.price ?? 0),
-          image: it.menuItem?.imageUrl,
-        })) : [];
-        const ui: OrderUI = {
-          id: raw.id,
-          status: uiStatus,
-          items,
-          total: Number(raw.totalAmount ?? 0),
-          deliveryFee: 2.00,
-          address,
-          estimatedDelivery: '30-45 minutes',
-          paymentMethod: (raw.paymentMethod || '').toString(),
-          paymentStatus: (raw.paymentStatus || '').toString(),
-        };
-        setOrder(ui);
-        setActiveStep(statusToStep[uiStatus]);
-        setIsArrivingSoon(statusToStep[uiStatus] === 3);
-      } catch (e: any) {
-        setError(e?.response?.data?.message || 'Failed to load order');
+        const rawStr = localStorage.getItem('currentOrder');
+        if (rawStr) {
+          const raw = JSON.parse(rawStr);
+          const statusRaw = (raw.status || '').toString().toUpperCase();
+          const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
+          const address = raw.address || 'N/A';
+          const items: OrderItemUI[] = Array.isArray(raw.items) ? raw.items.map((it: any) => ({
+            id: it.menuItemId || it.id || 'item',
+            name: it.name || 'Item',
+            quantity: Number(it.quantity || 1),
+            price: Number(it.unitPrice ?? it.price ?? 0),
+            image: it.image,
+          })) : [];
+          const ui: OrderUI = {
+            id: raw.id || id,
+            status: uiStatus,
+            items,
+            total: Number(raw.totalAmount ?? raw.total ?? 0),
+            deliveryFee: 2.00,
+            address,
+            estimatedDelivery: '30-45 minutes',
+            paymentMethod: (raw.paymentMethod || '').toString(),
+            paymentStatus: (raw.paymentStatus || '').toString(),
+          };
+          setOrder(ui);
+          setActiveStep(statusToStep[uiStatus]);
+          setIsArrivingSoon(statusToStep[uiStatus] === 3);
+        } else {
+          // Fallback mock
+          const mockOrder: OrderUI = {
+            id: id || 'MOCK',
+            status: 'delivering',
+            items: [
+              { id: 'm1', name: 'Cheeseburger', quantity: 2, price: 5.9, image: 'https://source.unsplash.com/random/200x200/?burger' },
+              { id: 'm2', name: 'French Fries', quantity: 1, price: 2.9, image: 'https://source.unsplash.com/random/200x200/?fries' },
+            ],
+            total: 14.7,
+            deliveryFee: 2.0,
+            address: '123 Lê Lợi, Q1, TP.HCM',
+            estimatedDelivery: '30-45 minutes',
+            paymentMethod: 'VNPAY',
+            paymentStatus: 'PAID',
+          };
+          setOrder(mockOrder);
+          setActiveStep(statusToStep[mockOrder.status]);
+          setIsArrivingSoon(statusToStep[mockOrder.status] === 3);
+        }
       } finally {
         setLoading(false);
       }
     };
-    fetchOrder();
+    loadMockOrder();
   }, [id, userId]);
 
   if (loading) {
@@ -215,7 +232,7 @@ const OrderTracking: React.FC = () => {
             </Box>
             
             <Box sx={{ height: 300, borderRadius: 1, overflow: 'hidden', mb: 2 }}>
-              <TrackingMap height={300} />
+              <TrackingMap height={300} orderId={String(order.id)} />
             </Box>
           </Paper>
           
