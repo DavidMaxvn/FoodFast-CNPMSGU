@@ -37,9 +37,21 @@ public class OrderServiceImpl implements OrderService {
         Address address = addressRepository.findById(orderRequest.getAddressId())
                 .orElseThrow(() -> new EntityNotFoundException("Address not found"));
         
+        // Determine store from first menu item and validate all items belong to same store
+        if (orderRequest.getItems() == null || orderRequest.getItems().isEmpty()) {
+            throw new IllegalArgumentException("Order must contain at least one item");
+        }
+        MenuItem firstMenuItem = menuItemRepository.findById(orderRequest.getItems().get(0).getMenuItemId())
+                .orElseThrow(() -> new EntityNotFoundException("Menu item not found"));
+        Store store = firstMenuItem.getStore();
+        if (store == null) {
+            throw new IllegalStateException("Menu item does not belong to a store");
+        }
+
         // Create order
         Order order = Order.builder()
                 .customer(currentUser)
+                .store(store)
                 .status(Order.OrderStatus.CREATED)
                 .totalAmount(BigDecimal.ZERO)
                 .paymentMethod(Order.PaymentMethod.valueOf(orderRequest.getPaymentMethod()))
@@ -61,12 +73,17 @@ public class OrderServiceImpl implements OrderService {
             if (!menuItem.isAvailable()) {
                 throw new IllegalStateException("Menu item " + menuItem.getName() + " is not available");
             }
+            if (menuItem.getStore() == null || !menuItem.getStore().getId().equals(store.getId())) {
+                throw new IllegalStateException("All items in an order must belong to the same store");
+            }
             
             OrderItem orderItem = OrderItem.builder()
                     .order(order)
                     .menuItem(menuItem)
                     .quantity(itemRequest.getQuantity())
                     .unitPrice(menuItem.getPrice())
+                    .nameSnapshot(menuItem.getName())
+                    .imageSnapshot(menuItem.getImageUrl())
                     .build();
             
             orderItemRepository.save(orderItem);
@@ -135,9 +152,10 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalStateException("Access denied: Order does not belong to current user");
         }
         
-        // Check if order can be cancelled
-        if (order.getStatus() != Order.OrderStatus.CREATED && 
-            order.getStatus() != Order.OrderStatus.PENDING_PAYMENT) {
+        // Check if order can be cancelled: only before READY_FOR_DELIVERY
+        if (!(order.getStatus() == Order.OrderStatus.CREATED ||
+              order.getStatus() == Order.OrderStatus.CONFIRMED ||
+              order.getStatus() == Order.OrderStatus.PREPARING)) {
             throw new IllegalStateException("Order cannot be cancelled in current status");
         }
         
@@ -188,50 +206,45 @@ public class OrderServiceImpl implements OrderService {
 
         switch (currentStatus) {
             case CREATED:
-                if (newStatus != Order.OrderStatus.PENDING_PAYMENT && 
-                    newStatus != Order.OrderStatus.PAID && 
-                    newStatus != Order.OrderStatus.REJECTED) {
-                    throw new IllegalStateException("Invalid status transition");
-                }
-                break;
-            case PENDING_PAYMENT:
-                if (newStatus != Order.OrderStatus.PAID && 
-                    newStatus != Order.OrderStatus.CANCELLED && 
-                    newStatus != Order.OrderStatus.REJECTED) {
-                    throw new IllegalStateException("Invalid status transition");
-                }
-                break;
-            case PAID:
-                if (newStatus != Order.OrderStatus.CONFIRMED && 
-                    newStatus != Order.OrderStatus.REJECTED) {
+                if (newStatus != Order.OrderStatus.CONFIRMED &&
+                    newStatus != Order.OrderStatus.REJECTED &&
+                    newStatus != Order.OrderStatus.CANCELLED) {
                     throw new IllegalStateException("Invalid status transition");
                 }
                 break;
             case CONFIRMED:
-                if (newStatus != Order.OrderStatus.PREPARING && 
-                    newStatus != Order.OrderStatus.REJECTED) {
+                if (newStatus != Order.OrderStatus.PREPARING &&
+                    newStatus != Order.OrderStatus.REJECTED &&
+                    newStatus != Order.OrderStatus.CANCELLED) {
                     throw new IllegalStateException("Invalid status transition");
                 }
                 break;
             case PREPARING:
-                if (newStatus != Order.OrderStatus.READY_FOR_DELIVERY && 
-                    newStatus != Order.OrderStatus.REJECTED) {
+                if (newStatus != Order.OrderStatus.READY_FOR_DELIVERY &&
+                    newStatus != Order.OrderStatus.REJECTED &&
+                    newStatus != Order.OrderStatus.CANCELLED) {
                     throw new IllegalStateException("Invalid status transition");
                 }
                 break;
             case READY_FOR_DELIVERY:
+                if (newStatus != Order.OrderStatus.ASSIGNED && newStatus != Order.OrderStatus.OUT_FOR_DELIVERY) {
+                    throw new IllegalStateException("Invalid status transition");
+                }
+                break;
+            case ASSIGNED:
                 if (newStatus != Order.OrderStatus.OUT_FOR_DELIVERY) {
                     throw new IllegalStateException("Invalid status transition");
                 }
                 break;
             case OUT_FOR_DELIVERY:
-                if (newStatus != Order.OrderStatus.DELIVERED) {
+                if (newStatus != Order.OrderStatus.DELIVERED && newStatus != Order.OrderStatus.FAILED) {
                     throw new IllegalStateException("Invalid status transition");
                 }
                 break;
             case DELIVERED:
             case REJECTED:
             case CANCELLED:
+            case FAILED:
                 throw new IllegalStateException("Cannot change status of a terminal state");
             default:
                 throw new IllegalStateException("Unknown order status");

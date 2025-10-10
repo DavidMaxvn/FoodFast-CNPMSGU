@@ -9,6 +9,7 @@ import com.fastfood.management.exception.ResourceNotFoundException;
 import com.fastfood.management.repository.OrderRepository;
 import com.fastfood.management.repository.PaymentRepository;
 import com.fastfood.management.service.api.PaymentService;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -140,7 +141,7 @@ public class PaymentServiceImpl implements PaymentService {
         if (signatureOk && "00".equals(responseCode)) {
             payment.setStatus(Payment.PaymentStatus.COMPLETED);
             order.setPaymentStatus(Order.PaymentStatus.PAID);
-            order.setStatus(Order.OrderStatus.PAID);
+            order.setStatus(Order.OrderStatus.CONFIRMED);
         } else {
             payment.setStatus(Payment.PaymentStatus.FAILED);
             if (order.getPaymentStatus() != Order.PaymentStatus.PAID) {
@@ -221,5 +222,27 @@ public class PaymentServiceImpl implements PaymentService {
                 .findFirst()
                 .orElse(list.get(0));
         return mapToPaymentResponse(latest);
+    }
+
+    @Override
+    public PaymentResponse createCODPayment(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with id: " + orderId));
+        // Tạo bản ghi thanh toán COD
+        Payment payment = Payment.builder()
+                .order(order)
+                .provider("COD")
+                .amount(order.getTotalAmount())
+                .transactionReference("COD-" + order.getId() + "-" + UUID.randomUUID().toString().substring(0, 8))
+                .status(Payment.PaymentStatus.COMPLETED)
+                .build();
+        paymentRepository.save(payment);
+
+        // Cập nhật trạng thái thanh toán đơn hàng
+        order.setPaymentStatus(Order.PaymentStatus.PAID);
+        order.setStatus(Order.OrderStatus.CONFIRMED);
+        orderRepository.save(order);
+
+        return mapToPaymentResponse(payment);
     }
 }

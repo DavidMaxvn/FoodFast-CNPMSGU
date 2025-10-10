@@ -31,6 +31,10 @@ public class Order {
     @JoinColumn(name = "customer_id")
     private User customer;
     
+    @ManyToOne
+    @JoinColumn(name = "store_id")
+    private Store store;
+    
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private OrderStatus status;
@@ -69,12 +73,12 @@ public class Order {
     private LocalDateTime updatedAt;
     
     public enum OrderStatus {
-        CREATED, PENDING_PAYMENT, PAID, CONFIRMED, PREPARING, 
-        READY_FOR_DELIVERY, OUT_FOR_DELIVERY, DELIVERED, REJECTED, CANCELLED
+        CREATED, CONFIRMED, PREPARING,
+        READY_FOR_DELIVERY, ASSIGNED, OUT_FOR_DELIVERY, DELIVERED, REJECTED, CANCELLED, FAILED
     }
     
     public enum PaymentMethod {
-        COD, VNPAY
+        COD, VNPAY, WALLET
     }
     
     public enum PaymentStatus {

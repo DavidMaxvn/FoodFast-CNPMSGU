@@ -9,7 +9,15 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "delivery_events")
+@Table(
+        name = "delivery_events",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uq_de_delivery_nonce", columnNames = {"delivery_id", "nonce"})
+        },
+        indexes = {
+                @Index(name = "idx_de_delivery_ts", columnList = "delivery_id, ts")
+        }
+)
 @Data
 @Builder
 @NoArgsConstructor
@@ -44,7 +52,13 @@ public class DeliveryEvent {
     @Column(nullable = false)
     private LocalDateTime ts;
     
+    @Column(length = 64)
+    private String nonce;
+
+    @Column(length = 500)
+    private String note;
+
     public enum EventType {
-        GPS_UPDATE, STATUS_CHANGE, DELIVERY_START, DELIVERY_COMPLETE
+        DELIVERY_START, GPS_UPDATE, DELIVERY_COMPLETE, ERROR
     }
 }

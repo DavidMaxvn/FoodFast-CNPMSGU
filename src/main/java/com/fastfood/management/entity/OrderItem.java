@@ -33,4 +33,10 @@ public class OrderItem {
     
     @Column(name = "unit_price", nullable = false)
     private BigDecimal unitPrice;
+
+    @Column(name = "name_snapshot")
+    private String nameSnapshot;
+
+    @Column(name = "image_snapshot")
+    private String imageSnapshot;
 }

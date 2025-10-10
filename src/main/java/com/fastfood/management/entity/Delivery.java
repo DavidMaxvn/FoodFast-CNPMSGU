@@ -30,9 +30,17 @@ public class Delivery {
     @JoinColumn(name = "order_id", unique = true)
     private Order order;
     
+    // POC  cho phép NULL, không FK
+    @Column(name = "store_id")
+    private Long storeId;
+
     @ManyToOne
     @JoinColumn(name = "drone_user_id")
     private User droneUser;
+
+    @ManyToOne
+    @JoinColumn(name = "drone_id")
+    private Drone drone;
     
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

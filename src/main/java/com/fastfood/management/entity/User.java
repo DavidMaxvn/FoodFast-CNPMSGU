@@ -43,6 +43,10 @@ public class User {
     
     @Column(nullable = false)
     private boolean enabled = true;
+
+    @OneToOne
+    @JoinColumn(name = "default_address_id")
+    private Address defaultAddress;
     
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(

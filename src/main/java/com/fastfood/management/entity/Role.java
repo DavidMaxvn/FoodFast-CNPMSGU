@@ -22,8 +22,7 @@ public class Role {
     private String code;
     
     public static final String ROLE_CUSTOMER = "CUSTOMER";
-    public static final String ROLE_KITCHEN = "KITCHEN";
-    public static final String ROLE_SERVICE = "SERVICE";
+    public static final String ROLE_MERCHANT = "MERCHANT";
     public static final String ROLE_DRONE = "DRONE";
     public static final String ROLE_ADMIN = "ADMIN";
 }

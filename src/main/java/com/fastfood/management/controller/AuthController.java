@@ -1,11 +1,15 @@
 package com.fastfood.management.controller;
 
 import com.fastfood.management.dto.request.LoginRequest;
+import com.fastfood.management.dto.request.RegisterRequest;
 import com.fastfood.management.entity.User;
+import com.fastfood.management.entity.Role;
 import com.fastfood.management.repository.UserRepository;
+import com.fastfood.management.repository.RoleRepository;
 import com.fastfood.management.security.JwtTokenProvider;
 import com.fastfood.management.security.UserDetailsImpl;
 import lombok.RequiredArgsConstructor;
+import java.util.HashSet;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -27,6 +31,7 @@ public class AuthController {
 
     // Phiên bản cơ bản: dùng trực tiếp UserRepository + PasswordEncoder để xác thực
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
 
@@ -69,5 +74,35 @@ public class AuthController {
     public ResponseEntity<?> logout() {
         // Phiên bản cơ bản: chỉ trả về thông báo, không quản lý session/JWT
         return ResponseEntity.ok(Map.of("message", "Đã đăng xuất"));
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest req) {
+        if (userRepository.existsByEmail(req.getEmail())) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "Email đã tồn tại"));
+        }
+        // Tạo user cơ bản
+        User user = User.builder()
+                .email(req.getEmail())
+                .username(req.getUsername())
+                .passwordHash(passwordEncoder.encode(req.getPassword()))
+                .fullName(req.getFullName())
+                .phone(req.getPhoneNumber() != null ? req.getPhoneNumber() : "")
+                .enabled(true)
+                .roles(new HashSet<>())
+                .build();
+        // Gán role CUSTOMER nếu có, nếu chưa có thì tạo
+        Role customerRole = roleRepository.findByCode(Role.ROLE_CUSTOMER)
+                .orElseGet(() -> roleRepository.save(Role.builder().code(Role.ROLE_CUSTOMER).build()));
+        user.getRoles().add(customerRole);
+        User saved = userRepository.save(user);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(Map.of(
+                        "message", "Đăng ký thành công",
+                        "id", saved.getId(),
+                        "email", saved.getEmail(),
+                        "fullName", saved.getFullName()
+                ));
     }
 }

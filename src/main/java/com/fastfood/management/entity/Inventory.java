@@ -28,6 +28,10 @@ public class Inventory {
     @JoinColumn(name = "menu_item_id", unique = true)
     private MenuItem menuItem;
 
+    @ManyToOne
+    @JoinColumn(name = "store_id")
+    private Store store;
+
     private Integer quantity;
 
     private Integer threshold;

@@ -24,6 +24,13 @@ public class Category {
     
     @Column(nullable = false)
     private String name;
+
+    @ManyToOne
+    @JoinColumn(name = "store_id")
+    private Store store;
+
+    @Column(name = "sort_order")
+    private Integer sortOrder;
     
     @OneToMany(mappedBy = "category", cascade = CascadeType.ALL)
     @Builder.Default
