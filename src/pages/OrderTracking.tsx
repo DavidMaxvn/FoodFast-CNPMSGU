@@ -27,7 +27,7 @@ import {
 import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
-// import { getOrderById } from '../services/order';
+import { getOrderById } from '../services/order';
 import TrackingMap from '../components/TrackingMap';
 
 // Order status steps
@@ -100,7 +100,21 @@ const OrderTracking: React.FC = () => {
           const raw = JSON.parse(rawStr);
           const statusRaw = (raw.status || '').toString().toUpperCase();
           const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
-          const address = raw.address || 'N/A';
+          
+          // Handle address properly - it might be a string or object
+          let address = 'N/A';
+          if (typeof raw.address === 'string') {
+            address = raw.address;
+          } else if (raw.address && typeof raw.address === 'object') {
+            const addr = raw.address;
+            address = [
+              addr.line1,
+              addr.ward,
+              addr.district,
+              addr.city
+            ].filter(Boolean).join(', ') || 'N/A';
+          }
+          
           const items: OrderItemUI[] = Array.isArray(raw.items) ? raw.items.map((it: any) => ({
             id: it.menuItemId || it.id || 'item',
             name: it.name || 'Item',
@@ -146,7 +160,63 @@ const OrderTracking: React.FC = () => {
         setLoading(false);
       }
     };
-    loadMockOrder();
+
+    const loadFromBackend = async () => {
+      if (!id || !userId) {
+        setLoading(false);
+        setError('Please login to view your order.');
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const dto = await getOrderById(userId, Number(id));
+        const statusRaw = (dto.status || '').toUpperCase();
+        const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
+        
+        // Handle address properly - ensure it's converted to string
+        let address = 'N/A';
+        if (typeof dto.address === 'string') {
+          address = dto.address;
+        } else if (dto.address && typeof dto.address === 'object') {
+          const addr = dto.address;
+          address = [
+            addr.line1,
+            addr.ward,
+            addr.district,
+            addr.city
+          ].filter(Boolean).join(', ') || 'N/A';
+        }
+        
+        const items: OrderItemUI[] = Array.isArray(dto.orderItems) ? dto.orderItems.map((it: any) => ({
+          id: it.id || it.menuItemId || 'item',
+          name: it.menuItem?.name || 'Item',
+          quantity: Number(it.quantity || 1),
+          price: Number(it.unitPrice ?? it.menuItem?.price ?? 0),
+          image: it.menuItem?.imageUrl,
+        })) : [];
+        const ui: OrderUI = {
+          id: dto.id || id,
+          status: uiStatus,
+          items,
+          total: Number(dto.totalAmount ?? 0),
+          deliveryFee: 2.00,
+          address,
+          estimatedDelivery: '30-45 minutes',
+          paymentMethod: (dto.paymentMethod || '').toString(),
+          paymentStatus: (dto.paymentStatus || '').toString(),
+        };
+        setOrder(ui);
+        setActiveStep(statusToStep[uiStatus]);
+        setIsArrivingSoon(statusToStep[uiStatus] === 3);
+      } catch (e) {
+        // Fallback to local mock if backend not available
+        loadMockOrder();
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadFromBackend();
   }, [id, userId]);
 
   if (loading) {

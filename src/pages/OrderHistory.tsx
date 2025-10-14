@@ -1,54 +1,40 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Typography, Grid, Card, CardContent, Chip, Button } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-
-interface OrderItemVM {
-  id: string;
-  name: string;
-  quantity: number;
-  price: number;
-}
-
-interface OrderVM {
-  id: string;
-  status: 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
-  total: number;
-  createdAt: string;
-  items: OrderItemVM[];
-}
+import { useSelector } from 'react-redux';
+import { RootState } from '../store';
+import { getMyOrders, OrderDTO, OrderVM } from '../services/order';
 
 const OrderHistory: React.FC = () => {
   const navigate = useNavigate();
-  // TODO(API): Thay mock bằng dữ liệu từ listMyOrders(userId) trong services/order
-  const orders = useMemo<OrderVM[]>(() => ([
-    {
-      id: '1001',
-      status: 'COMPLETED',
-      total: 159000,
-      createdAt: '2025-10-07 12:15',
-      items: [
-        { id: 'm1', name: 'Cheese Burger', quantity: 2, price: 59000 },
-        { id: 'm7', name: 'Coke', quantity: 1, price: 41000 },
-      ],
-    },
-    {
-      id: '1002',
-      status: 'DELIVERING',
-      total: 89000,
-      createdAt: '2025-10-08 09:45',
-      items: [
-        { id: 'm3', name: 'Fried Chicken', quantity: 1, price: 89000 },
-      ],
-    },
-  ]), []);
+  const { user } = useSelector((state: RootState) => state.auth);
+  const [orders, setOrders] = useState<OrderDTO[]>([]);
+
+  useEffect(() => {
+    if (user?.id) {
+      getMyOrders(user.id)
+        .then((data) => {
+          console.log("API Response Data:", data);
+          setOrders(data);
+        })
+        .catch((error) => {
+          console.error("Failed to fetch orders:", error);
+        });
+    }
+  }, [user]);
 
   const statusColor = (s: OrderVM['status']) => {
     switch (s) {
-      case 'COMPLETED': return 'success';
-      case 'DELIVERING': return 'info';
-      case 'PREPARING': return 'warning';
-      case 'CANCELLED': return 'error';
-      default: return 'default';
+      case 'COMPLETED':
+        return 'success';
+      case 'DELIVERING':
+        return 'info';
+      case 'PREPARING':
+        return 'warning';
+      case 'CANCELLED':
+        return 'error';
+      default:
+        return 'default';
     }
   };
 
@@ -66,13 +52,13 @@ const OrderHistory: React.FC = () => {
                 </Box>
                 <Typography variant="body2" sx={{ color: 'text.secondary' }}>Tạo lúc: {o.createdAt}</Typography>
                 <Box sx={{ mt: 1 }}>
-                  {o.items.map((it) => (
+                  {o.orderItems?.map((it) => (
                     <Typography key={it.id} variant="body2">
-                      {it.quantity} x {it.name} · {(it.price * it.quantity).toLocaleString()} ₫
+                      {it.quantity} x {it.menuItem?.name} · ${(it.unitPrice! * it.quantity).toLocaleString()}
                     </Typography>
                   ))}
                 </Box>
-                <Typography variant="subtitle1" sx={{ mt: 1, fontWeight: 700 }}>Tổng: {o.total.toLocaleString()} ₫</Typography>
+                <Typography variant="subtitle1" sx={{ mt: 1, fontWeight: 700 }}>Tổng: ${o.totalAmount?.toLocaleString()}</Typography>
                 <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
                   <Button variant="outlined" onClick={() => navigate(`/order/tracking/${o.id}`)}>Theo dõi</Button>
                   <Button variant="contained" onClick={() => navigate(`/order/confirmation/${o.id}`)}>Xem xác nhận</Button>

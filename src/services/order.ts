@@ -9,7 +9,7 @@ export interface OrderItemDTO {
 
 export interface OrderDTO {
   id: number;
-  status: string;
+  status: 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
   totalAmount?: number;
   createdAt?: string;
   address?: { line1: string; ward?: string; district?: string; city?: string };
@@ -28,7 +28,7 @@ export interface OrderItemVM {
 
 export interface OrderVM {
   id: string;
-  status: string;
+  status: 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
   total: number;
   createdAt: string;
   items: OrderItemVM[];
@@ -83,5 +83,43 @@ export interface CreateOrderRequest {
 
 export async function createOrder(userId: string | number, payload: CreateOrderRequest): Promise<OrderDTO> {
   const res = await api.post('/orders', payload, { params: { userId } });
+  return res.data;
+}
+
+export async function getMyOrders(userId: string | number): Promise<OrderDTO[]> {
+  const res = await api.get('/orders/me', { params: { userId } });
+  return res.data;
+}
+
+// ================================================
+// Merchant / Staff specific order management functions
+// ================================================
+
+export interface StoreOrder {
+  id: number;
+  code: string;
+  customerName: string;
+  totalAmount: number;
+  status: 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
+  createdAt: string;
+}
+
+export interface Page<T> {
+  content: T[];
+  totalPages: number;
+  totalElements: number;
+  number: number;
+  size: number;
+}
+
+export async function getOrdersByStore(status: string, page: number = 0, size: number = 10): Promise<Page<StoreOrder>> {
+  const res = await api.get('/orders/store', {
+    params: { status, page, size },
+  });
+  return res.data;
+}
+
+export async function updateOrderStatus(orderId: number, status: string): Promise<OrderDTO> {
+  const res = await api.put(`/orders/${orderId}/status`, { status });
   return res.data;
 }

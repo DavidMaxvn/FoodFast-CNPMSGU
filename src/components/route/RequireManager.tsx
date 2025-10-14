@@ -1,18 +1,101 @@
-import React from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useMerchantSession } from '../../store/merchantSession';
+import { useLocation, Navigate } from "react-router-dom";
+import { useMerchantSession, MerchantStore } from "../../store/merchantSession";
+import { useSelector } from "react-redux";
+import { RootState } from "../../store";
+import React, { useEffect, useState } from "react";
+import api from "../../services/api";
+import { CircularProgress, Box, Typography } from "@mui/material";
 
-// Vietnamese comments:
-// Guard route: chỉ cho phép MANAGER truy cập các màn hình quản trị.
-// STAFF sẽ bị chuyển hướng về Orders.
+const RequireManager = ({ children }: { children: JSX.Element }) => {
+    const { currentStore, setSession } = useMerchantSession();
+    const location = useLocation();
+    const auth = useSelector((state: RootState) => state.auth);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-const RequireManager: React.FC = () => {
-  const { currentStore } = useMerchantSession();
-  const location = useLocation();
-  if (currentStore?.role === 'STAFF') {
-    return <Navigate to="/merchant/orders" state={{ from: location }} replace />;
-  }
-  return <Outlet />;
+    useEffect(() => {
+        if (!currentStore && auth.isAuthenticated) {
+            const fetchAndSetStore = async () => {
+                setLoading(true);
+                try {
+                    const response = await api.get<MerchantStore[]>('/me/stores');
+                    if (response.data && response.data.length > 0) {
+                        setSession(response.data[0]); // Automatically select the first store
+                        console.log('Store loaded:', response.data[0]);
+                    } else {
+                        console.log('No stores found for user');
+                        setError("No stores assigned to your account.");
+                    }
+                } catch (err: any) {
+                    console.error('Failed to fetch stores:', err);
+                    
+                    // If the endpoint doesn't exist (404) or other errors, create a mock store for merchant users
+                    if (auth.user && Array.isArray(auth.user.roles) && 
+                        (auth.user.roles.includes('MERCHANT') || auth.user.roles.includes('ROLE_MERCHANT'))) {
+                        console.log('Creating mock store for merchant user');
+                        const mockStore: MerchantStore = {
+                            id: 'store-1',
+                            name: 'Default Store',
+                            role: 'MANAGER'
+                        };
+                        setSession(mockStore);
+                    } else {
+                        setError("Failed to fetch store information. Please contact administrator.");
+                    }
+                } finally {
+                    setLoading(false);
+                }
+            };
+            fetchAndSetStore();
+        }
+    }, [currentStore, auth.isAuthenticated, auth.user, setSession]);
+
+    if (loading || (!currentStore && auth.isAuthenticated)) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
+
+    if (error) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+                <Typography color="error">{error}</Typography>
+            </Box>
+        );
+    }
+    
+    if (!currentStore) {
+        // This case should now only be hit if the user is not authenticated
+        // or if fetching stores failed and they are not authenticated.
+        return <Navigate to="/login" state={{ from: location }} replace />;
+    }
+
+    const hasMerchantRole = auth.user && Array.isArray(auth.user.roles) && 
+                            (auth.user.roles.includes('MERCHANT') || 
+                             auth.user.roles.includes('ROLE_MERCHANT') ||
+                             auth.user.roles.includes('MANAGER') ||
+                             auth.user.roles.includes('ROLE_MANAGER') ||
+                             auth.user.roles.includes('STORE_MANAGER'));
+
+    const isManagerInStore = currentStore?.role === "MANAGER";
+
+    console.log('Auth check:', {
+        user: auth.user,
+        roles: auth.user?.roles,
+        hasMerchantRole,
+        currentStore,
+        isManagerInStore
+    });
+
+    // Allow access if user has merchant role OR is a manager in the store
+    if (!hasMerchantRole && !isManagerInStore) {
+        console.log('Redirecting to staff orders due to insufficient permissions');
+        return <Navigate to="/staff/orders" state={{ from: location }} replace />;
+    }
+
+    return children;
 };
 
 export default RequireManager;

@@ -2,6 +2,9 @@ import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Box, Drawer, Toolbar, List, ListItemButton, ListItemText, Typography, Divider } from '@mui/material';
 import { useMerchantSession } from '../../store/merchantSession';
+import { useSelector, useDispatch } from 'react-redux';
+import { RootState } from '../../store';
+import { logout } from '../../store/slices/authSlice';
 
 const drawerWidth = 240;
 
@@ -17,14 +20,12 @@ const managerItems = [
   { label: 'Staff', path: '/merchant/staff' },
   { label: 'Reports', path: '/merchant/reports' },
   { label: 'Feedback', path: '/merchant/feedback' },
-  { label: 'Login', path: '/merchant/login' },
 ];
 const staffItems = [
   { label: 'Home', path: '/merchant' },
   { label: 'Orders', path: '/merchant/orders' },
   { label: 'Inventory', path: '/merchant/inventory' },
   { label: 'Feedback', path: '/merchant/feedback' },
-  { label: 'Login', path: '/merchant/login' },
 ];
 
 /**
@@ -35,6 +36,39 @@ const MerchantLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentStore } = useMerchantSession();
+  const dispatch = useDispatch();
+  const auth = useSelector((state: RootState) => state.auth);
+
+  const isAuthenticated = auth.isAuthenticated;
+  const hasMerchantRole = Array.isArray(auth.user?.roles) && (
+    auth.user!.roles.includes('MERCHANT') ||
+    auth.user!.roles.includes('ROLE_MERCHANT') ||
+    auth.user!.roles.includes('ADMIN') ||
+    auth.user!.roles.includes('ROLE_ADMIN')
+  );
+
+  const renderItems = () => {
+    const base = currentStore?.role === 'STAFF'
+      ? staffItems
+      : managerItems;
+    // Nếu chưa đăng nhập và không có phiên store -> cho phép vào Merchant Login
+    // Nếu đã đăng nhập/đã có phiên -> ẩn mục Login
+    const filtered = base.filter(it => it.path !== '/merchant/login');
+    // Hiển thị Merchant Login nếu không có quyền merchant và chưa chọn cửa hàng,
+    // bất kể trạng thái đăng nhập customer
+    if (!currentStore && !hasMerchantRole) {
+      return [...filtered, { label: 'Login', path: '/merchant/login' }];
+    }
+    return filtered;
+  };
+
+  const handleLogout = () => {
+    dispatch(logout());
+    // Clear phiên merchant nếu có
+    // useMerchantSession đã expose clearSession, nhưng không có ở đây; dùng localStorage key
+    try { localStorage.removeItem('merchantSession'); } catch {}
+    navigate('/login');
+  };
 
   return (
     <Box sx={{ display: 'flex' }}>
@@ -60,7 +94,7 @@ const MerchantLayout: React.FC = () => {
           </Box>
           <Divider />
           <List>
-            {(currentStore?.role === 'STAFF' ? staffItems : managerItems).map((item) => {
+            {renderItems().map((item) => {
               const selected = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
               return (
                 <ListItemButton
@@ -72,6 +106,14 @@ const MerchantLayout: React.FC = () => {
                 </ListItemButton>
               );
             })}
+            {isAuthenticated && (
+              <>
+                <Divider sx={{ my: 1 }} />
+                <ListItemButton onClick={handleLogout}>
+                  <ListItemText primary="Logout" />
+                </ListItemButton>
+              </>
+            )}
           </List>
         </Box>
       </Drawer>

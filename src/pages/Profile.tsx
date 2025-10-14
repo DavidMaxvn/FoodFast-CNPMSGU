@@ -4,6 +4,7 @@ import { RootState } from '../store';
 import { Box, Card, CardContent, Typography, Stack, Button, Grid, TextField, Alert } from '@mui/material';
 import { logout } from '../store/slices/authSlice';
 import { useNavigate } from 'react-router-dom';
+import { AddressDTO, createAddress, getDefaultAddress, updateAddress } from '../services/address';
 
 const Profile: React.FC = () => {
   const dispatch = useDispatch();
@@ -16,10 +17,10 @@ const Profile: React.FC = () => {
     line1: string;
     ward?: string;
     district?: string;
-    city?: string;
+    city: string;
   };
 
-  const [defaultAddress, setDefaultAddress] = useState<AddressLocal | null>(null);
+  const [defaultAddress, setDefaultAddress] = useState<AddressDTO | null>(null);
   const [addrForm, setAddrForm] = useState<AddressLocal>({
     receiverName: '',
     phone: '',
@@ -31,14 +32,52 @@ const Profile: React.FC = () => {
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user?.id) return;
-    try {
-      const raw = localStorage.getItem(`address:${user.id}:default`);
-      if (raw) {
-        const addr = JSON.parse(raw) as AddressLocal;
-        setDefaultAddress(addr);
+    let mounted = true;
+    const load = async () => {
+      console.log('Profile.tsx: user object from Redux:', user);
+      if (!user?.id) {
+        console.log('Profile.tsx: No user ID, skipping address fetch.');
+        return;
       }
-    } catch {}
+      try {
+        console.log(`Profile.tsx: Fetching default address for userId: ${user.id}`);
+        const addr = await getDefaultAddress(Number(user.id));
+        console.log('Profile.tsx: Fetched default address:', addr);
+        if (mounted) {
+          setDefaultAddress(addr);
+          if (addr) {
+            console.log('Profile.tsx: Setting address form with fetched data.');
+            setAddrForm({
+              receiverName: addr.receiverName || '',
+              phone: addr.phone || '',
+              line1: addr.line1 || '',
+              ward: addr.ward || '',
+              district: addr.district || '',
+              city: addr.city || '',
+            });
+          }
+        }
+      } catch {
+        // Fallback to local if backend not available
+        try {
+          const raw = localStorage.getItem(`address:${user.id}:default`);
+          if (raw && mounted) {
+            const addr = JSON.parse(raw) as AddressDTO;
+            setDefaultAddress(addr);
+            setAddrForm({
+              receiverName: addr.receiverName || '',
+              phone: addr.phone || '',
+              line1: addr.line1 || '',
+              ward: addr.ward || '',
+              district: addr.district || '',
+              city: addr.city || '',
+            });
+          }
+        } catch {}
+      }
+    };
+    load();
+    return () => { mounted = false; };
   }, [user?.id]);
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,15 +85,34 @@ const Profile: React.FC = () => {
     setAddrForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const saveDefaultAddress = () => {
+  const saveDefaultAddress = async () => {
     if (!user?.id) return;
     if (!addrForm.receiverName || !addrForm.phone || !addrForm.line1 || !addrForm.city) {
       setInfoMsg('Vui lòng điền đầy đủ thông tin bắt buộc.');
       return;
     }
-    localStorage.setItem(`address:${user.id}:default`, JSON.stringify(addrForm));
-    setDefaultAddress(addrForm);
-    setInfoMsg('Đã lưu địa chỉ mặc định.');
+    if (!/^\d{10,11}$/.test(addrForm.phone)) {
+      setInfoMsg('Số điện thoại phải 10–11 chữ số.');
+      return;
+    }
+    try {
+      if (defaultAddress?.id) {
+        const updated = await updateAddress(Number(user.id), Number(defaultAddress.id), { ...addrForm });
+        const refreshed = await getDefaultAddress(Number(user.id));
+        setDefaultAddress(refreshed || updated);
+        setInfoMsg('Đã cập nhật địa chỉ mặc định.');
+        localStorage.setItem(`address:${user.id}:default`, JSON.stringify(refreshed || updated));
+      } else {
+        const saved = await createAddress(Number(user.id), { ...addrForm, isDefault: true });
+        const refreshed = await getDefaultAddress(Number(user.id));
+        setDefaultAddress(refreshed || saved);
+        setInfoMsg('Đã lưu địa chỉ mặc định mới.');
+        localStorage.setItem(`address:${user.id}:default`, JSON.stringify(refreshed || saved));
+      }
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || 'Không thể lưu địa chỉ. Vui lòng thử lại.';
+      setInfoMsg(msg);
+    }
   };
 
   const onLogout = () => {

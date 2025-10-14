@@ -1,26 +1,62 @@
-import React, { useState } from 'react';
-import { 
-  Box, 
-  Typography, 
-  TextField, 
-  Button, 
-  Paper, 
-  Link, 
+import React, { useEffect } from 'react';
+import {
+  Box,
+  Typography,
+  TextField,
+  Button,
+  Paper,
+  Link,
   CircularProgress,
-  Alert
+  Alert,
+  Container
 } from '@mui/material';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import { useDispatch } from 'react-redux';
+import { Link as RouterLink, useNavigate, useLocation } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
+import { AppDispatch, RootState } from '../store';
 import { loginStart, loginSuccess, loginFailure } from '../store/slices/authSlice';
-import jwtDecode from 'jwt-decode';
-import api from '../services/api';
+import { toast } from 'react-toastify';
+import api from '../services/api'; // Assuming you have an api service configured
 
 const Login: React.FC = () => {
+  const dispatch: AppDispatch = useDispatch();
   const navigate = useNavigate();
-  const dispatch = useDispatch();
-  const [error, setError] = useState<string | null>(null);
+  const location = useLocation();
+  const { isAuthenticated, user, isLoading } = useSelector(
+    (state: RootState) => state.auth
+  );
+
+  // Determine where to redirect after login. Default to home page.
+  const from = location.state?.from?.pathname || "/";
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      const hasAdminRole =
+        user.roles.includes("ADMIN") || user.roles.includes("ROLE_ADMIN");
+
+      const hasManagerRole =
+        user.roles.includes("MANAGER") ||
+        user.roles.includes("ROLE_MANAGER") ||
+        user.roles.includes("MERCHANT") ||
+        user.roles.includes("ROLE_MERCHANT");
+
+      const hasStaffRole =
+        user.roles.includes("STAFF") || user.roles.includes("ROLE_STAFF");
+
+      if (hasAdminRole) {
+        navigate("/admin/dashboard", { replace: true });
+      } else if (hasManagerRole) {
+        navigate("/merchant/dashboard", { replace: true });
+      } else if (hasStaffRole) {
+        navigate("/staff/orders", { replace: true });
+      } else {
+        // For other roles (e.g., CUSTOMER), go to the 'from' location or home
+        navigate(from, { replace: true });
+      }
+    }
+  }, [isAuthenticated, user, navigate, from]);
 
   const formik = useFormik({
     initialValues: {
@@ -31,150 +67,101 @@ const Login: React.FC = () => {
       email: Yup.string()
         .email('Invalid email address')
         .required('Email is required'),
-      password: Yup.string()
-        .required('Password is required'),
+      password: Yup.string().required('Password is required'),
     }),
     onSubmit: async (values) => {
+      dispatch(loginStart());
       try {
-        dispatch(loginStart());
-        setError(null);
-        formik.setSubmitting(true);
-
-        // Sử dụng axios client chung với baseURL/interceptors
-        const response = await api.post('/auth/login', {
-          email: values.email,
-          password: values.password,
-        });
-
-        const data = response.data as any;
-        const roles = (() => {
-          try {
-            const decoded: any = jwtDecode(data.token);
-            if (decoded?.roles) {
-              return String(decoded.roles).split(',').filter((r: string) => r.trim().length > 0);
-            }
-            return [];
-          } catch {
-            return [];
-          }
-        })();
-
-        const user = {
-          id: String(data.id),
-          email: data.email,
-          fullName: data.fullName,
-          roles: roles,
-        };
-
-        dispatch(loginSuccess({
-          user,
-          token: data.token,
-          refreshToken: data.refreshToken,
-        }));
-
-        // nếu là admin -> /admin vào đúng role admin, ngược lại -> /
-        const isAdmin = roles.includes('ROLE_ADMIN') || roles.includes('ADMIN');
-        navigate(isAdmin ? '/admin' : '/');
-      } catch (err: any) {
+        const response = await api.post('/auth/login', values);
+        const { token, refreshToken, ...user } = response.data;
+        dispatch(loginSuccess({ user, token, refreshToken }));
+        toast.success("Login successful!");
+        // The useEffect above will handle the redirection
+      } catch (error: any) {
+        const errorMessage = error.response?.data?.message || "Login failed. Please check your credentials.";
         dispatch(loginFailure());
-        // Phân biệt lỗi mạng (backend không chạy/CORS) và 401 sai thông tin
-        if (!err?.response) {
-          setError('Không thể kết nối tới máy chủ. Vui lòng kiểm tra backend (http://localhost:8081) và cơ sở dữ liệu.');
-        } else {
-          const status = err.response.status;
-          const backendMsg = err.response?.data?.message;
-          if (status === 401) {
-            setError(backendMsg || 'Email hoặc mật khẩu không đúng');
-          } else {
-            setError(backendMsg || 'Đăng nhập thất bại. Vui lòng thử lại sau');
-          }
-        }
-      } finally {
-        formik.setSubmitting(false);
+        toast.error(errorMessage);
       }
     },
   });
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        py: 4
-      }}
-    >
-      <Paper
-        elevation={3}
+    <Container component="main" maxWidth="xs">
+      <Box
         sx={{
-          p: 4,
-          width: '100%',
-          maxWidth: 400,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: 'calc(100vh - 64px)', // Adjust for header height if necessary
+          py: 4
         }}
       >
-        <Typography variant="h5" component="h1" gutterBottom align="center">
-          Login to Your Account
-        </Typography>
-        
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        
-        <form onSubmit={formik.handleSubmit}>
-          <TextField
-            fullWidth
-            id="email"
-            name="email"
-            label="Email"
-            variant="outlined"
-            margin="normal"
-            value={formik.values.email}
-            onChange={formik.handleChange}
-            onBlur={formik.handleBlur}
-            error={formik.touched.email && Boolean(formik.errors.email)}
-            helperText={formik.touched.email && formik.errors.email}
-          />
-          
-          <TextField
-            fullWidth
-            id="password"
-            name="password"
-            label="Password"
-            type="password"
-            variant="outlined"
-            margin="normal"
-            value={formik.values.password}
-            onChange={formik.handleChange}
-            onBlur={formik.handleBlur}
-            error={formik.touched.password && Boolean(formik.errors.password)}
-            helperText={formik.touched.password && formik.errors.password}
-          />
-          
-          <Button
-            fullWidth
-            type="submit"
-            variant="contained"
-            color="primary"
-            size="large"
-            disabled={formik.isSubmitting}
-            sx={{ mt: 3, mb: 2 }}
-          >
-            {formik.isSubmitting ? <CircularProgress size={24} /> : 'Login'}
-          </Button>
-          
-          <Box sx={{ textAlign: 'center' }}>
-            <Typography variant="body2">
-              Don't have an account?{' '}
-              <Link component={RouterLink} to="/register">
-                Register here
-              </Link>
-            </Typography>
-          </Box>
-        </form>
-      </Paper>
-    </Box>
+        <Paper
+          elevation={3}
+          sx={{
+            p: 4,
+            width: '100%',
+            maxWidth: 400,
+          }}
+        >
+          <Typography variant="h5" component="h1" gutterBottom align="center">
+            Login
+          </Typography>
+
+          <form onSubmit={formik.handleSubmit}>
+            <TextField
+              fullWidth
+              id="email"
+              name="email"
+              label="Email"
+              variant="outlined"
+              margin="normal"
+              value={formik.values.email}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
+              error={formik.touched.email && Boolean(formik.errors.email)}
+              helperText={formik.touched.email && formik.errors.email}
+            />
+
+            <TextField
+              fullWidth
+              id="password"
+              name="password"
+              label="Password"
+              type="password"
+              variant="outlined"
+              margin="normal"
+              value={formik.values.password}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
+              error={formik.touched.password && Boolean(formik.errors.password)}
+              helperText={formik.touched.password && formik.errors.password}
+            />
+
+            <Button
+              fullWidth
+              type="submit"
+              variant="contained"
+              color="primary"
+              size="large"
+              disabled={isLoading}
+              sx={{ mt: 3, mb: 2 }}
+            >
+              {isLoading ? <CircularProgress size={24} /> : 'Login'}
+            </Button>
+
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="body2">
+                Don't have an account?{' '}
+                <Link component={RouterLink} to="/register">
+                  Register here
+                </Link>
+              </Typography>
+            </Box>
+          </form>
+        </Paper>
+      </Box>
+    </Container>
   );
 };
 

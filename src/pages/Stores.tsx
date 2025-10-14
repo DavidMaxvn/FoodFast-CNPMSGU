@@ -4,13 +4,14 @@ import { useNavigate } from 'react-router-dom';
 import { fetchStores, StoreViewModel } from '../services/stores';
 
 // Mock data for stores UI while backend is not ready
+const BACKEND_ORIGIN = (process.env.REACT_APP_API_BASE || 'http://localhost:8081').replace(/\/+$/, '');
 const MOCK_STORES: StoreViewModel[] = [
   {
     id: 's1',
     name: 'FastFood Center - Quận 1',
     address: '123 Lê Lợi, P. Bến Nghé, Q1, TP.HCM',
     phone: '0901 234 567',
-    image: 'https://source.unsplash.com/random/800x400/?restaurant',
+    image: `${BACKEND_ORIGIN}/images/menu/burgers/veggie-burger.jpg`,
     status: 'ACTIVE',
   },
   {
@@ -18,7 +19,7 @@ const MOCK_STORES: StoreViewModel[] = [
     name: 'FastFood Drive - Quận 3',
     address: '45 Cách Mạng Tháng 8, Q3, TP.HCM',
     phone: '0902 345 678',
-    image: 'https://source.unsplash.com/random/800x400/?fastfood',
+    image: `${BACKEND_ORIGIN}/images/menu/sides/french-fries.jpg`,
     status: 'ACTIVE',
   },
   {
@@ -26,7 +27,7 @@ const MOCK_STORES: StoreViewModel[] = [
     name: 'FastFood Express - Thủ Đức',
     address: '88 Võ Văn Ngân, TP. Thủ Đức',
     phone: '0903 456 789',
-    image: 'https://source.unsplash.com/random/800x400/?food,store',
+    image: `${BACKEND_ORIGIN}/images/menu/chicken/chicken-wings.jpg`,
     status: 'SUSPENDED',
   },
 ];

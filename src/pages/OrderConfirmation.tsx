@@ -16,9 +16,10 @@ const OrderConfirmation: React.FC = () => {
           <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Tóm tắt</Typography>
           <Typography variant="body2">- 2 x Cheese Burger</Typography>
           <Typography variant="body2">- 1 x Coke</Typography>
-          <Typography variant="body2" sx={{ mt: 1 }}>Tổng: 159,000 ₫</Typography>
-          <Divider sx={{ my: 2 }} />
-          <Button variant="contained" color="primary">Theo dõi đơn</Button>
+          <Box>
+            <Typography variant="body2">Phí giao hàng: 15,000</Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>Tổng: $159,000</Typography>
+          </Box>
         </CardContent>
       </Card>
     </Box>

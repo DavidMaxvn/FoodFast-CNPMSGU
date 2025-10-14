@@ -25,7 +25,9 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
-import { AddressDTO } from '../services/address';
+import { AddressDTO, createAddress, getDefaultAddress, setDefaultAddress as apiSetDefaultAddress } from '../services/address';
+import { createOrder, CreateOrderItemRequest } from '../services/order';
+import { createVNPayPayment } from '../services/payment';
 
 interface CartItem {
   id: string;
@@ -41,7 +43,7 @@ const Checkout: React.FC = () => {
   const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('vnpay');
-  const [useSavedAddress, setUseSavedAddress] = useState<'default' | 'new'>('default');
+  const [useSavedAddress, setUseSavedAddress] = useState<'default' | 'new'>('new');
   const [defaultAddress, setDefaultAddress] = useState<AddressDTO | null>(null);
   const [useOnce, setUseOnce] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -60,22 +62,84 @@ const Checkout: React.FC = () => {
   const userId = auth.user ? Number(auth.user.id) : null;
   const { items, totalAmount } = useSelector((state: RootState) => state.cart);
 
+  const isValidPhone = (p: string | undefined) => !!p && /^\d{10,11}$/.test(p);
+  const isValidLocalAddress = (a: any) =>
+    !!(a && a.receiverName && a.phone && a.line1 && a.city && isValidPhone(a.phone));
+  const isValidAddressDTO = (a: AddressDTO | null): a is AddressDTO =>
+    !!(a && typeof a.id === 'number' && a.id > 0 && a.receiverName && a.phone && a.line1 && a.city && isValidPhone(a.phone));
+
   useEffect(() => {
     if (!userId) return;
-    try {
-      const raw = localStorage.getItem(`address:${userId}:default`);
-      if (raw) {
-        const addr = JSON.parse(raw) as AddressDTO;
-        setDefaultAddress(addr);
-        setUseSavedAddress('default');
-      } else {
+    (async () => {
+      try {
+        const addr = await getDefaultAddress(userId);
+        if (addr) {
+          setDefaultAddress(addr);
+          setUseSavedAddress('default');
+          return;
+        }
+      } catch {
+        // ignore and fallback
+      }
+      try {
+        const raw = localStorage.getItem(`address:${userId}:default`);
+        if (raw) {
+          const localDef = JSON.parse(raw) as Partial<AddressDTO> & { receiverName?: string; phone?: string; line1?: string; ward?: string; district?: string; city?: string };
+          // If local default is invalid, force user to enter new address and prefill fields
+          if (!isValidLocalAddress(localDef)) {
+            setDefaultAddress(null);
+            setUseSavedAddress('new');
+            setAddress(prev => ({
+              fullName: localDef.receiverName || prev.fullName,
+              phone: localDef.phone || prev.phone,
+              street: localDef.line1 || prev.street,
+              city: localDef.city || prev.city,
+              district: localDef.district || prev.district,
+              notes: prev.notes,
+            }));
+          } else if (!localDef.id) {
+            // Materialize valid local default on backend to obtain id
+            try {
+              const created = await createAddress(userId, {
+                receiverName: localDef.receiverName!,
+                phone: localDef.phone!,
+                line1: localDef.line1!,
+                ward: localDef.ward || '',
+                district: localDef.district || '',
+                city: localDef.city!,
+                isDefault: true,
+              });
+              if (created && typeof created.id === 'number') {
+                try {
+                  await apiSetDefaultAddress(userId, created.id);
+                } catch {}
+              }
+              setDefaultAddress(created);
+              setUseSavedAddress('default');
+              localStorage.setItem(`address:${userId}:default`, JSON.stringify(created));
+            } catch (e) {
+              setDefaultAddress(null);
+              setUseSavedAddress('new');
+            }
+          } else {
+            const dto = localDef as AddressDTO;
+            if (isValidAddressDTO(dto)) {
+              setDefaultAddress(dto);
+              setUseSavedAddress('default');
+            } else {
+              setDefaultAddress(null);
+              setUseSavedAddress('new');
+            }
+          }
+        } else {
+          setDefaultAddress(null);
+          setUseSavedAddress('new');
+        }
+      } catch {
         setDefaultAddress(null);
         setUseSavedAddress('new');
       }
-    } catch {
-      setDefaultAddress(null);
-      setUseSavedAddress('new');
-    }
+    })();
   }, [userId]);
 
   const handleNext = async () => {
@@ -84,8 +148,8 @@ const Checkout: React.FC = () => {
       // Validate and prepare address
       try {
         if (useSavedAddress === 'default') {
-          if (!defaultAddress) {
-            setErrorMsg('Không có địa chỉ mặc định. Vui lòng nhập địa chỉ mới.');
+          if (!isValidAddressDTO(defaultAddress)) {
+            setErrorMsg('Địa chỉ mặc định không hợp lệ. Vui lòng nhập địa chỉ mới.');
             return;
           }
         } else {
@@ -96,6 +160,10 @@ const Checkout: React.FC = () => {
           }
           if (!address.fullName || !address.phone || !address.street || !address.city) {
             setErrorMsg('Vui lòng điền đầy đủ thông tin địa chỉ.');
+            return;
+          }
+          if (!isValidPhone(address.phone)) {
+            setErrorMsg('Số điện thoại phải gồm 10-11 chữ số.');
             return;
           }
           const newAddress = {
@@ -145,55 +213,109 @@ const Checkout: React.FC = () => {
         setSubmitting(false);
         return;
       }
-      // Mock address handling: ensure either default or new address is present
-      if (useSavedAddress === 'default' && !defaultAddress) {
-        setErrorMsg('Thiếu địa chỉ mặc định. Vui lòng nhập địa chỉ mới.');
-        setSubmitting(false);
-        return;
-      }
-      if (useSavedAddress === 'new') {
+      // Ensure address exists (backend)
+      let addressId: number | null = null;
+      if (useSavedAddress === 'default') {
+        if (isValidAddressDTO(defaultAddress)) {
+          addressId = defaultAddress.id;
+        } else {
+          // Try to create from local default if available
+          const raw = localStorage.getItem(`address:${userId}:default`);
+          if (!raw) {
+            setErrorMsg('Thiếu địa chỉ mặc định. Vui lòng nhập địa chỉ mới.');
+            setSubmitting(false);
+            return;
+          }
+          const localDef = JSON.parse(raw) as any;
+          if (!isValidLocalAddress(localDef)) {
+            setErrorMsg('Địa chỉ mặc định không hợp lệ (SĐT 10-11 chữ số, điền đủ trường). Vui lòng nhập địa chỉ mới.');
+            setUseSavedAddress('new');
+            setSubmitting(false);
+            // Prefill form with whatever is present
+            setAddress(prev => ({
+              fullName: localDef.receiverName || prev.fullName,
+              phone: localDef.phone || prev.phone,
+              street: localDef.line1 || prev.street,
+              city: localDef.city || prev.city,
+              district: localDef.district || prev.district,
+              notes: prev.notes,
+            }));
+            return;
+          }
+          const created = await createAddress(userId, {
+            receiverName: localDef.receiverName || address.fullName,
+            phone: localDef.phone || address.phone,
+            line1: localDef.line1 || address.street,
+            ward: localDef.ward || '',
+            district: localDef.district || address.district,
+            city: localDef.city || address.city,
+            isDefault: true,
+          });
+          addressId = created.id;
+          setDefaultAddress(created);
+          if (created && typeof created.id === 'number') {
+            try {
+              await apiSetDefaultAddress(userId, created.id);
+            } catch {}
+          }
+        }
+      } else {
         const requiredFilled = address.fullName && address.phone && address.street && address.city;
         if (!requiredFilled) {
           setErrorMsg('Vui lòng nhập đầy đủ địa chỉ giao hàng.');
           setSubmitting(false);
           return;
         }
-        // Save as default if not 'use once'
-        if (!useOnce && userId) {
-          const toSave = {
-            receiverName: address.fullName,
-            phone: address.phone,
-            line1: address.street,
-            ward: '',
-            district: address.district,
-            city: address.city,
-          };
-          localStorage.setItem(`address:${userId}:default`, JSON.stringify(toSave));
+        if (!isValidPhone(address.phone)) {
+          setErrorMsg('Số điện thoại phải gồm 10-11 chữ số.');
+          setSubmitting(false);
+          return;
+        }
+        const created = await createAddress(userId, {
+          receiverName: address.fullName,
+          phone: address.phone,
+          line1: address.street,
+          ward: '',
+          district: address.district,
+          city: address.city,
+          isDefault: !useOnce,
+        });
+        addressId = created.id;
+        if (!useOnce) {
+          try {
+            await apiSetDefaultAddress(userId, created.id);
+          } catch {}
+          setDefaultAddress(created);
+          localStorage.setItem(`address:${userId}:default`, JSON.stringify(created));
         }
       }
 
-      const orderItems = items.map((it) => ({
+      const orderItems: CreateOrderItemRequest[] = items.map((it) => ({
         menuItemId: Number(it.id),
         quantity: it.quantity,
       }));
 
-      // MOCK: Create local order and skip API calls
-      const orderId = Date.now();
-      const mockOrder = {
-        id: orderId,
-        status: 'confirmed',
-        paymentMethod: paymentMethod,
-        paymentStatus: paymentMethod === 'vnpay' ? 'paid' : 'cod',
-        orderDate: new Date().toISOString(),
-        totalAmount: totalAmount + 2,
+      const order = await createOrder(userId, {
+        addressId: addressId!,
+        paymentMethod: paymentMethod.toUpperCase(),
+        note: address.notes || undefined,
         items: orderItems,
-        address: useSavedAddress === 'default' && defaultAddress ?
-          `${defaultAddress.receiverName} - ${defaultAddress.phone}, ${defaultAddress.line1}, ${[defaultAddress.ward, defaultAddress.district, defaultAddress.city].filter(Boolean).join(', ')}` :
-          `${address.fullName} - ${address.phone}, ${address.street}, ${[address.district, address.city].filter(Boolean).join(', ')}`,
-      };
-      localStorage.setItem('currentOrder', JSON.stringify(mockOrder));
-      // Redirect to mock payment result
-      navigate(`/payment/result?status=success&orderId=${orderId}&method=${paymentMethod}`);
+      });
+
+      if (paymentMethod === 'vnpay') {
+        // Request VNPay payment URL and redirect
+        const vn = await createVNPayPayment(Number(order.id), {
+          returnUrl: `${window.location.origin}/payment/result`,
+          ipAddress: '127.0.0.1',
+          locale: 'vn',
+        });
+        localStorage.setItem('pendingOrder', JSON.stringify(order));
+        window.location.href = vn.paymentUrl;
+      } else {
+        // COD: treat as success and go to result
+        localStorage.setItem('currentOrder', JSON.stringify(order));
+        navigate(`/payment/result?status=success&orderId=${order.id}&method=cod`);
+      }
     } catch (error: any) {
       console.error('Error placing order:', error);
       setErrorMsg(error?.response?.data?.message || 'Đặt hàng thất bại');

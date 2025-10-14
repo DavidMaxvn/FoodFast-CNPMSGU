@@ -5,6 +5,7 @@ import { ShoppingCart, Person } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../../store';
+import { useMerchantSession } from '../../store/merchantSession';
 import { logout } from '../../store/slices/authSlice';
 
 const MainLayout: React.FC = () => {
@@ -12,6 +13,7 @@ const MainLayout: React.FC = () => {
   const dispatch = useDispatch();
   const { items } = useSelector((state: RootState) => state.cart);
   const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
+  const { currentStore } = useMerchantSession();
 
   const cartItemCount = items.reduce((total, item) => total + item.quantity, 0);
 
@@ -22,6 +24,16 @@ const MainLayout: React.FC = () => {
   const handleMenuClose = () => setAnchorEl(null);
   const handleProfile = () => { handleMenuClose(); navigate('/profile'); };
   const handleLogout = () => { handleMenuClose(); dispatch(logout()); navigate('/login'); };
+
+  // RBAC: hiển thị Merchant Portal nếu user có ROLE_MERCHANT/ROLE_ADMIN
+  // hoặc đã có phiên staff (currentStore khác null)
+  const hasMerchantRole = Array.isArray(user?.roles) && (
+    user!.roles.includes('MERCHANT') ||
+    user!.roles.includes('ROLE_MERCHANT') ||
+    user!.roles.includes('ADMIN') ||
+    user!.roles.includes('ROLE_ADMIN')
+  );
+  const hasMerchantAccess = hasMerchantRole || !!currentStore;
 
   return (
     <>
@@ -44,6 +56,7 @@ const MainLayout: React.FC = () => {
             >
               Stores
             </Button>
+           
             {isAuthenticated && (
               <>
                 <Button 

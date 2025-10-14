@@ -26,7 +26,7 @@ const MOCK_HOME_MENU = [
   { id: 'm1', name: 'Cheeseburger', description: 'Burger phô mai thơm ngon', price: 59000, image: 'https://source.unsplash.com/random/600x400/?burger', category: 'Burgers', available: true },
   { id: 'm2', name: 'French Fries', description: 'Khoai tây chiên giòn', price: 29000, image: 'https://source.unsplash.com/random/600x400/?fries', category: 'Sides', available: true },
   { id: 'm3', name: 'Fried Chicken', description: 'Gà rán giòn tan', price: 89000, image: 'https://source.unsplash.com/random/600x400/?chicken', category: 'Chicken', available: true },
-  { id: 'm4', name: 'Coca Cola', description: 'Nước uống có ga', price: 19000, image: 'https://source.unsplash.com/random/600x400/?cola', category: 'Drinks', available: true },
+  { id: 'm4', name: 'Coca Cola', description: 'Nước uống có ga', price: 19000, image: 'http://localhost:8081/images/menu/drinks/coca-cola.jpg', category: 'Drinks', available: true },
 ];
 
 const Home: React.FC = () => {

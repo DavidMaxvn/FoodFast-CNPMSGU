@@ -39,7 +39,7 @@ function buildPath(start: { lat: number; lng: number }, end: { lat: number; lng:
  */
 export function initTelemetry(onMessage: (t: Telemetry) => void, opts: TelemetryOptions = {}) {
   const wsUrl = opts.wsUrl || process.env.REACT_APP_WS_URL || 'http://localhost:8080/ws';
-  const topic = opts.topic || '/topic/drone/demo';
+  const topic = opts.topic || '/topic/orders/demo';
   const intervalMs = opts.intervalMs || 1000;
 
   let client: Client | undefined;
@@ -71,10 +71,27 @@ export function initTelemetry(onMessage: (t: Telemetry) => void, opts: Telemetry
       client?.subscribe(topic, (msg: IMessage) => {
         if (disposed) return;
         try {
-          const payload = JSON.parse(msg.body);
-          if (typeof payload.lat === 'number' && typeof payload.lng === 'number') {
-            onMessage(payload as Telemetry);
+          const data = JSON.parse(msg.body);
+          let t: Telemetry | undefined;
+
+          // Backend format via WebSocketService
+          if (data && typeof data === 'object' && data.type === 'GPS_UPDATE' && data.payload) {
+            const p = data.payload || {};
+            if (typeof p.lat === 'number' && typeof p.lng === 'number') {
+              t = {
+                lat: p.lat,
+                lng: p.lng,
+                heading: typeof p.heading === 'number' ? p.heading : undefined,
+                speed: typeof p.speedKmh === 'number' ? p.speedKmh : undefined,
+                battery_pct: typeof p.batteryPct === 'number' ? p.batteryPct : undefined,
+              };
+            }
+          } else if (typeof data?.lat === 'number' && typeof data?.lng === 'number') {
+            // Direct telemetry payload fallback
+            t = data as Telemetry;
           }
+
+          if (t) onMessage(t);
         } catch {
           // ignore bad payloads
         }

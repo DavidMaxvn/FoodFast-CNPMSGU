@@ -35,7 +35,6 @@ import KitchenBoard from './pages/admin/KitchenBoard';
 import DroneConsole from './pages/admin/DroneConsole';
 // Merchant/Kitchen Portal Pages
 import MerchantHome from './pages/merchant/MerchantHome';
-import MerchantLogin from './pages/merchant/MerchantLogin';
 import MerchantDashboard from './pages/merchant/MerchantDashboard';
 import MerchantOrders from './pages/merchant/MerchantOrders';
 import MerchantOrderDetail from './pages/merchant/MerchantOrderDetail';
@@ -49,6 +48,9 @@ import MerchantLayout from './components/layouts/MerchantLayout';
 import MerchantFeedback from './pages/merchant/MerchantFeedback';
 import { MerchantSessionProvider } from './store/merchantSession';
 import RequireManager from './components/route/RequireManager';
+import RequireStaff from './components/route/RequireStaff';
+import StaffLayout from './components/layouts/StaffLayout';
+import AuthDebug from './components/debug/AuthDebug';
 
 const theme = createTheme({
   palette: {
@@ -87,9 +89,10 @@ const AdminRoute: React.FC<{ children: React.ReactElement }> = ({ children }) =>
 
 function App() {
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Routes>
+    <MerchantSessionProvider>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Routes>
         {/* Public Routes */}
         <Route path="/" element={<MainLayout />}>
           <Route index element={<Stores />} />
@@ -106,11 +109,13 @@ function App() {
           <Route path="orders/history" element={<PrivateRoute><OrderHistory /></PrivateRoute>} />
           <Route path="order/confirmation/:id" element={<PrivateRoute><OrderConfirmation /></PrivateRoute>} />
           <Route path="notifications" element={<PrivateRoute><Notifications /></PrivateRoute>} />
+          <Route path="debug" element={<AuthDebug />} />
         </Route>
 
         {/* Admin Routes */}
         <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
           <Route index element={<Dashboard />} />
+          <Route path="dashboard" element={<Dashboard />} />
           {/* <Route path="menu" element={<MenuManagement />} /> */}
           <Route path="inventory" element={<InventoryManagement />} />
           <Route path="orders" element={<OrderManagement />} />
@@ -119,26 +124,48 @@ function App() {
           <Route path="drones" element={<DroneConsole />} />
         </Route>
 
-        {/* Merchant/Kitchen Portal (Mock) với nav trái */}
-        <Route path="/merchant" element={<MerchantSessionProvider><MerchantLayout /></MerchantSessionProvider>}>
-          <Route index element={<MerchantHome />} />
-          <Route path="login" element={<MerchantLogin />} />
-          {/* Manager-only routes */}
-          <Route element={<RequireManager />}>
-            <Route path="dashboard" element={<MerchantDashboard />} />
-            <Route path="menu" element={<MerchantMenu />} />
-            <Route path="menu/new" element={<MerchantMenuForm />} />
-            <Route path="categories" element={<MerchantCategories />} />
-            <Route path="staff" element={<MerchantStaff />} />
-            <Route path="reports" element={<MerchantReports />} />
-          </Route>
+        {/* Merchant/Kitchen Portal */}
+        <Route
+          path="/merchant"
+          element={
+            <RequireManager>
+              <MerchantLayout />
+            </RequireManager>
+          }
+        >
+          {/* Routes accessible by both Manager and Staff */}
           <Route path="orders" element={<MerchantOrders />} />
-          <Route path="orders/:id" element={<MerchantOrderDetail />} />
           <Route path="inventory" element={<MerchantInventory />} />
           <Route path="feedback" element={<MerchantFeedback />} />
+          <Route path="orders/:id" element={<MerchantOrderDetail />} />
+
+          {/* Manager-only routes */}
+          <Route path="dashboard" element={<MerchantDashboard />} />
+          <Route path="menu" element={<MerchantMenu />} />
+          <Route path="menu/new" element={<MerchantMenuForm />} />
+          <Route path="categories" element={<MerchantCategories />} />
+          <Route path="staff" element={<MerchantStaff />} />
+          <Route path="reports" element={<MerchantReports />} />
+
+          <Route index element={<Navigate to="/merchant/dashboard" replace />} />
+        </Route>
+
+        {/* Routes for staff */}
+        <Route
+          path="/staff"
+          element={
+            <RequireStaff>
+              <StaffLayout />
+            </RequireStaff>
+          }
+        >
+          <Route path="orders" element={<MerchantOrders />} />
+          <Route path="inventory" element={<MerchantInventory />} />
+          <Route index element={<Navigate to="/staff/orders" replace />} />
         </Route>
       </Routes>
     </ThemeProvider>
+    </MerchantSessionProvider>
   );
 }
 

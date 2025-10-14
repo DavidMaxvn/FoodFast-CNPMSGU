@@ -45,6 +45,11 @@ export const createAddress = async (userId: number, payload: AddressRequest): Pr
   return res.data;
 };
 
+export const updateAddress = async (userId: number, id: number, payload: AddressRequest): Promise<AddressDTO> => {
+  const res = await api.put(`/addresses/${id}`, payload, { params: { userId } });
+  return res.data;
+};
+
 export const setDefaultAddress = async (userId: number, id: number): Promise<AddressDTO> => {
   const res = await api.put(`/addresses/${id}/default`, null, { params: { userId } });
   return res.data;

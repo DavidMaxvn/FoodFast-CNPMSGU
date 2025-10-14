@@ -29,6 +29,8 @@ import {
   ChevronLeft
 } from '@mui/icons-material';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { useDispatch } from 'react-redux';
+import { logout } from '../../store/slices/authSlice';
 
 const drawerWidth = 240;
 
@@ -50,8 +52,9 @@ const AdminLayout: React.FC = () => {
     setAnchorEl(null);
   };
 
+  const dispatch = useDispatch();
   const handleLogout = () => {
-    // In a real app, we would handle logout here
+    dispatch(logout());
     navigate('/login');
   };
 

@@ -49,7 +49,7 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
         setDrone({ lat: t.lat, lng: t.lng });
       }, {
         wsUrl,
-        topic: orderId ? `/topic/drone/${orderId}` : '/topic/drone/demo',
+        topic: orderId ? `/topic/orders/${orderId}` : '/topic/orders/demo',
         fallbackStart: startPoint,
         fallbackEnd: endPoint,
         intervalMs: 800,
