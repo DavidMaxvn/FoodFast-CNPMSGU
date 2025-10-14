@@ -12,9 +12,11 @@ import java.util.Optional;
 
 @Repository
 public interface InventoryRepository extends JpaRepository<Inventory, Long> {
-    
+
     Optional<Inventory> findByMenuItemId(Long menuItemId);
-    
+
+    List<Inventory> findByMenuItem_Store_Id(Long storeId);
+
     @Query("SELECT i FROM Inventory i WHERE i.quantity <= i.threshold")
     List<Inventory> findLowStockItems();
     

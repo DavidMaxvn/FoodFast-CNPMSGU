@@ -4,6 +4,7 @@ import com.fastfood.management.dto.request.OrderRequest;
 import com.fastfood.management.dto.response.OrderResponse;
 import com.fastfood.management.entity.*;
 import com.fastfood.management.repository.*;
+import java.util.UUID;
 import com.fastfood.management.service.api.OrderService;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
@@ -28,6 +29,8 @@ public class OrderServiceImpl implements OrderService {
     private final MenuItemRepository menuItemRepository;
     private final AddressRepository addressRepository;
     private final OrderActivityRepository orderActivityRepository;
+    private final PaymentRepository paymentRepository;
+    private final DeliveryRepository deliveryRepository;
     // private final WebSocketService webSocketService;
 
     @Override
@@ -95,7 +98,12 @@ public class OrderServiceImpl implements OrderService {
         // Update order total
         order.setTotalAmount(totalAmount);
         order = orderRepository.save(order);
-        
+
+        // Auto insert payment record based on payment method
+        insertPaymentForOrder(order);
+
+        // KHÔNG tạo Delivery lúc tạo đơn; sẽ tạo khi đơn READY_FOR_DELIVERY
+
         // Create order activity
         OrderActivity activity = OrderActivity.builder()
                 .order(order)
@@ -111,6 +119,44 @@ public class OrderServiceImpl implements OrderService {
         return order;
     }
 
+    private void insertPaymentForOrder(Order order) {
+        if (order.getPaymentMethod() == Order.PaymentMethod.COD) {
+            Payment payment = Payment.builder()
+                    .order(order)
+                    .provider("COD")
+                    .amount(order.getTotalAmount())
+                    .transactionReference("COD-" + order.getId() + "-" + UUID.randomUUID().toString().substring(0, 8))
+                    .status(Payment.PaymentStatus.COMPLETED)
+                    .build();
+            paymentRepository.save(payment);
+
+            order.setPaymentStatus(Order.PaymentStatus.PAID);
+            orderRepository.save(order);
+        } else if (order.getPaymentMethod() == Order.PaymentMethod.VNPAY || order.getPaymentMethod() == Order.PaymentMethod.WALLET) {
+            String provider = order.getPaymentMethod() == Order.PaymentMethod.VNPAY ? "VNPAY" : "WALLET";
+            Payment payment = Payment.builder()
+                    .order(order)
+                    .provider(provider)
+                    .amount(order.getTotalAmount())
+                    .transactionReference("ORD-" + order.getId() + "-" + UUID.randomUUID().toString().substring(0, 8))
+                    .status(Payment.PaymentStatus.PENDING)
+                    .build();
+            paymentRepository.save(payment);
+        }
+    }
+
+    private void insertDeliveryForOrder(Order order) {
+        Delivery delivery = Delivery.builder()
+                .order(order)
+                .status(Delivery.DeliveryStatus.PENDING)
+                .destLat(order.getAddress() != null ? order.getAddress().getLat() : null)
+                .destLng(order.getAddress() != null ? order.getAddress().getLng() : null)
+                .build();
+        delivery = deliveryRepository.save(delivery);
+        order.setDelivery(delivery);
+        orderRepository.save(order);
+    }
+
     @Override
     @Transactional
     public Order updateOrderStatus(Long id, Order.OrderStatus status, User currentUser) {
@@ -118,6 +164,44 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new EntityNotFoundException("Order not found"));
         
         Order.OrderStatus oldStatus = order.getStatus();
+
+        // RBAC: Chỉ MERCHANT hoặc ADMIN được phép thao tác các trạng thái vận hành bếp/giao hàng
+        boolean isAdmin = hasSystemRole(currentUser, Role.ROLE_ADMIN);
+        boolean isMerchant = hasSystemRole(currentUser, Role.ROLE_MERCHANT);
+        boolean isOwner = order.getCustomer() != null && order.getCustomer().getId().equals(currentUser.getId());
+
+        switch (status) {
+            case CONFIRMED:
+            case PREPARING:
+            case READY_FOR_DELIVERY:
+            case ASSIGNED:
+            case OUT_FOR_DELIVERY:
+            case DELIVERED:
+            case REJECTED:
+                if (!(isAdmin || isMerchant)) {
+                    throw new IllegalStateException("Chỉ nhân viên cửa hàng hoặc admin mới được cập nhật trạng thái này");
+                }
+                break;
+            case CANCELLED:
+                // Cho phép chủ đơn hủy, hoặc admin/merchant
+                if (!(isOwner || isAdmin || isMerchant)) {
+                    throw new IllegalStateException("Bạn không có quyền hủy đơn này");
+                }
+                break;
+            default:
+                break;
+        }
+
+        // Ràng buộc thanh toán: từ CONFIRMED trở đi phải PAID
+        if ((status == Order.OrderStatus.CONFIRMED ||
+             status == Order.OrderStatus.PREPARING ||
+             status == Order.OrderStatus.READY_FOR_DELIVERY ||
+             status == Order.OrderStatus.ASSIGNED ||
+             status == Order.OrderStatus.OUT_FOR_DELIVERY ||
+             status == Order.OrderStatus.DELIVERED)
+            && order.getPaymentStatus() != Order.PaymentStatus.PAID) {
+            throw new IllegalStateException("Đơn chưa thanh toán (PAID), không thể chuyển trạng thái");
+        }
         
         // Validate status transition
         validateStatusTransition(oldStatus, status);
@@ -125,7 +209,7 @@ public class OrderServiceImpl implements OrderService {
         // Update order status
         order.setStatus(status);
         order = orderRepository.save(order);
-        
+
         // Create order activity
         OrderActivity activity = OrderActivity.builder()
                 .order(order)
@@ -134,6 +218,11 @@ public class OrderServiceImpl implements OrderService {
                 .toStatus(status)
                 .build();
         orderActivityRepository.save(activity);
+
+        // Tạo Delivery khi đơn chuyển sang READY_FOR_DELIVERY (nếu chưa có)
+        if (status == Order.OrderStatus.READY_FOR_DELIVERY && order.getDelivery() == null) {
+            insertDeliveryForOrder(order);
+        }
         
         // Bỏ gửi WebSocket trong phiên bản cơ bản
         // webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
@@ -249,6 +338,11 @@ public class OrderServiceImpl implements OrderService {
             default:
                 throw new IllegalStateException("Unknown order status");
         }
+    }
+
+    private boolean hasSystemRole(User user, String code) {
+        if (user == null || user.getRoles() == null) return false;
+        return user.getRoles().stream().anyMatch(r -> code.equals(r.getCode()));
     }
     
     private User getCurrentUser() {

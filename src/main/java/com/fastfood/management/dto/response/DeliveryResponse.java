@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 public class DeliveryResponse {
     private Long id;
     private Long orderId;
-    private Long droneUserId;
+    private Long droneId;
     private String status;
     private Double startLat;
     private Double startLng;

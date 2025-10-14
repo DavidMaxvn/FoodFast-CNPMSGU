@@ -28,8 +28,8 @@ public class DeliveryController {
     @PostMapping("/{id}/accept")
     public ResponseEntity<DeliveryResponse> acceptDelivery(
             @PathVariable Long id,
-            @RequestParam("droneUserId") Long droneUserId) {
-        DeliveryResponse delivery = deliveryService.acceptDelivery(id, droneUserId);
+            @RequestParam("droneId") Long droneId) {
+        DeliveryResponse delivery = deliveryService.acceptDelivery(id, droneId);
         return ResponseEntity.ok(delivery);
     }
 

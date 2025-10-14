@@ -23,9 +23,7 @@ public class InventoryTransaction {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    @JoinColumn(name = "store_id", nullable = false)
-    private Store store;
+    // Store suy ra từ menuItem.getStore(); bỏ cột store_id để tránh dư thừa
 
     @ManyToOne
     @JoinColumn(name = "menu_item_id", nullable = false)

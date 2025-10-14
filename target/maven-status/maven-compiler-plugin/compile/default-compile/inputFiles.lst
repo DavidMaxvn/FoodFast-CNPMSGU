@@ -10,6 +10,7 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\Address.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\OrderActivityRepository.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\MenuItemResponse.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\api\InventoryService.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\DeliveryRepository.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\StoreRepository.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\OrderItemRepository.java
@@ -29,7 +30,9 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\sec
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\request\OrderRequest.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\config\WebSocketConfig.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\impl\UserDetailsServiceImpl.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\impl\InventoryServiceImpl.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\OrderActivity.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\model\InventoryDTO.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\PaymentResponse.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\MenuController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\mapper\PaymentMapper.java
@@ -52,6 +55,9 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\ser
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\Delivery.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\OrderController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\Drone.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\StoreStaffRepository.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\AddressSimpleResponse.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\DroneRepository.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\mapper\UserMapper.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\VNPayResponse.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\request\PaymentRequest.java
@@ -59,9 +65,11 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\rep
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\impl\OrderServiceImpl.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\AddressResponse.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\request\CategoryRequest.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\model\MenuItemDTO.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\api\UserService.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\DroneController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\DeliveryEventRepository.java
-C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\DroneApiKey.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\MeController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\DeliveryResponse.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\InventoryRepository.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\PaymentController.java
@@ -76,3 +84,4 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\security\JwtAuthenticationFilter.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\UserResponse.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\impl\PaymentServiceImpl.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\InventoryController.java

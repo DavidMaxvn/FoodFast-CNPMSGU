@@ -13,6 +13,7 @@ com\fastfood\management\entity\InventoryTransaction$InventoryTransactionBuilder.
 com\fastfood\management\entity\Store.class
 com\fastfood\management\repository\DeliveryEventRepository.class
 com\fastfood\management\security\JwtAuthenticationFilter.class
+com\fastfood\management\repository\DroneRepository.class
 com\fastfood\management\repository\CategoryRepository.class
 com\fastfood\management\dto\request\MenuItemRequest.class
 com\fastfood\management\entity\Payment.class
@@ -47,7 +48,6 @@ com\fastfood\management\entity\Role$RoleBuilder.class
 com\fastfood\management\service\api\OrderService.class
 com\fastfood\management\service\impl\PaymentServiceImpl.class
 com\fastfood\management\entity\Address$AddressBuilder.class
-com\fastfood\management\entity\DroneApiKey$DroneApiKeyBuilder.class
 com\fastfood\management\dto\request\PaymentRequest.class
 com\fastfood\management\dto\request\RegisterRequest.class
 com\fastfood\management\entity\User$UserBuilder.class
@@ -72,6 +72,7 @@ com\fastfood\management\entity\Order$PaymentStatus.class
 com\fastfood\management\exception\GlobalExceptionHandler.class
 com\fastfood\management\dto\response\CategoryResponse.class
 com\fastfood\management\entity\Order$PaymentMethod.class
+com\fastfood\management\controller\DroneController.class
 com\fastfood\management\security\JwtTokenProvider.class
 com\fastfood\management\entity\OrderItem$OrderItemBuilder.class
 com\fastfood\management\dto\request\CategoryRequest.class
@@ -110,7 +111,7 @@ com\fastfood\management\controller\DeliveryController.class
 com\fastfood\management\FastFoodManagementApplication.class
 com\fastfood\management\entity\OrderActivity.class
 com\fastfood\management\entity\Category$CategoryBuilder.class
+com\fastfood\management\entity\StoreStaff$StaffRole.class
 com\fastfood\management\service\api\UserService.class
 com\fastfood\management\entity\OrderItem.class
-com\fastfood\management\entity\DroneApiKey.class
 com\fastfood\management\entity\Delivery.class

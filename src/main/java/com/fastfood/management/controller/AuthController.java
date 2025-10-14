@@ -3,8 +3,12 @@ package com.fastfood.management.controller;
 import com.fastfood.management.dto.request.LoginRequest;
 import com.fastfood.management.dto.request.RegisterRequest;
 import com.fastfood.management.entity.User;
+import com.fastfood.management.entity.StoreStaff;
+import com.fastfood.management.entity.Store;
 import com.fastfood.management.entity.Role;
 import com.fastfood.management.repository.UserRepository;
+import com.fastfood.management.repository.StoreRepository;
+import com.fastfood.management.repository.StoreStaffRepository;
 import com.fastfood.management.repository.RoleRepository;
 import com.fastfood.management.security.JwtTokenProvider;
 import com.fastfood.management.security.UserDetailsImpl;
@@ -32,6 +36,8 @@ public class AuthController {
     // Phiên bản cơ bản: dùng trực tiếp UserRepository + PasswordEncoder để xác thực
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final StoreStaffRepository storeStaffRepository;
+    private final StoreRepository storeRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
 
@@ -59,14 +65,52 @@ public class AuthController {
         String token = jwtTokenProvider.generateToken(authentication);
         String refreshToken = jwtTokenProvider.generateRefreshToken(authentication);
 
+        // Build roles list
+        java.util.Set<String> roles = user.getRoles() != null
+                ? user.getRoles().stream().map(Role::getCode).collect(java.util.stream.Collectors.toSet())
+                : java.util.Collections.emptySet();
+
+        // Build myStores payload similar to /me/stores for immediate role-based routing
+        java.util.List<StoreStaff> activeStaff = storeStaffRepository.findByUserIdAndStatus(user.getId(), StoreStaff.StaffStatus.ACTIVE);
+        java.util.List<Store> managerStores = storeRepository.findByManager(user);
+
+        java.util.Map<Long, java.util.Map<String, Object>> payloadMap = new java.util.LinkedHashMap<>();
+
+        for (Store s : managerStores) {
+            payloadMap.put(s.getId(), java.util.Map.of(
+                    "store_id", s.getId(),
+                    "store_name", s.getName(),
+                    "role", StoreStaff.StaffRole.MANAGER.name(),
+                    "isManager", true,
+                    "permissions", java.util.List.of("orders.view", "orders.approve", "inventory.view", "reports.view")
+            ));
+        }
+
+        for (StoreStaff ss : activeStaff) {
+            boolean isMgr = ss.getRole() == StoreStaff.StaffRole.MANAGER || (ss.getStore().getManager() != null && ss.getStore().getManager().getId().equals(user.getId()));
+            java.util.List<String> perms = isMgr ? java.util.List.of("orders.view", "orders.approve", "inventory.view", "reports.view") : java.util.List.of("orders.view", "orders.approve", "inventory.view", "reports.view");
+            java.util.Map<String, Object> entry = java.util.Map.of(
+                    "store_id", ss.getStore().getId(),
+                    "store_name", ss.getStore().getName(),
+                    "role", ss.getRole().name(),
+                    "isManager", isMgr,
+                    "permissions", perms
+            );
+            payloadMap.put(ss.getStore().getId(), entry);
+        }
+
+        java.util.List<java.util.Map<String, Object>> myStores = new java.util.ArrayList<>(payloadMap.values());
+
         // return
         Map<String, Object> response = new HashMap<>();
         response.put("message", "Đăng nhập thành công");
         response.put("id", user.getId());
         response.put("email", user.getEmail());
         response.put("fullName", user.getFullName());
+        response.put("roles", roles);
         response.put("token", token);
         response.put("refreshToken", refreshToken);
+        response.put("myStores", myStores);
         return ResponseEntity.ok(response);
     }
 

@@ -28,9 +28,7 @@ public class Inventory {
     @JoinColumn(name = "menu_item_id", unique = true)
     private MenuItem menuItem;
 
-    @ManyToOne
-    @JoinColumn(name = "store_id")
-    private Store store;
+    // Store có thể suy ra từ menuItem.getStore(), không cần cột store_id lặp lại
 
     private Integer quantity;
 

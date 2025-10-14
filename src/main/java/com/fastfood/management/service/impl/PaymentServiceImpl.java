@@ -141,7 +141,7 @@ public class PaymentServiceImpl implements PaymentService {
         if (signatureOk && "00".equals(responseCode)) {
             payment.setStatus(Payment.PaymentStatus.COMPLETED);
             order.setPaymentStatus(Order.PaymentStatus.PAID);
-            order.setStatus(Order.OrderStatus.CONFIRMED);
+            // KHÔNG tự động CONFIRMED; để staff xác nhận theo quy trình
         } else {
             payment.setStatus(Payment.PaymentStatus.FAILED);
             if (order.getPaymentStatus() != Order.PaymentStatus.PAID) {

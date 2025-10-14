@@ -11,7 +11,7 @@ import java.util.List;
 public interface PaymentMapper {
 
     @Mapping(target = "orderId", source = "order.id")
-    @Mapping(target = "status", expression = "java(payment.getStatus().name())")
+    @Mapping(target = "status", expression = "java(payment.getStatus() != null ? payment.getStatus().name() : null)")
     PaymentResponse paymentToPaymentResponse(Payment payment);
 
     List<PaymentResponse> paymentsToPaymentResponses(List<Payment> payments);

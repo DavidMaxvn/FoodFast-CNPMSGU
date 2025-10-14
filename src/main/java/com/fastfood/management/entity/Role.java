@@ -25,4 +25,5 @@ public class Role {
     public static final String ROLE_MERCHANT = "MERCHANT";
     public static final String ROLE_DRONE = "DRONE";
     public static final String ROLE_ADMIN = "ADMIN";
+    public static final String ROLE_STAFF = "STAFF";
 }

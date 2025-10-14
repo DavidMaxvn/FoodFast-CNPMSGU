@@ -6,10 +6,10 @@ import com.fastfood.management.dto.response.TrackingResponse;
 import com.fastfood.management.entity.Delivery;
 import com.fastfood.management.entity.DeliveryEvent;
 import com.fastfood.management.entity.Order;
-import com.fastfood.management.entity.User;
+import com.fastfood.management.entity.Drone;
 import com.fastfood.management.repository.DeliveryRepository;
 import com.fastfood.management.repository.OrderRepository;
-import com.fastfood.management.repository.UserRepository;
+import com.fastfood.management.repository.DroneRepository;
 import com.fastfood.management.service.api.DeliveryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,14 +28,15 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     private final DeliveryRepository deliveryRepository;
     private final OrderRepository orderRepository;
-    private final UserRepository userRepository;
+    private final DroneRepository droneRepository;
+    private final WebSocketService webSocketService;
 
     // Hàm tiện ích: chuyển từ entity Delivery sang DTO DeliveryResponse (đơn giản hoá)
     private DeliveryResponse toResponse(Delivery delivery) {
         DeliveryResponse dto = new DeliveryResponse();
         dto.setId(delivery.getId());
         dto.setOrderId(delivery.getOrder() != null ? delivery.getOrder().getId() : null);
-        dto.setDroneUserId(delivery.getDroneUser() != null ? delivery.getDroneUser().getId() : null);
+        dto.setDroneId(delivery.getDrone() != null ? delivery.getDrone().getId() : null);
         dto.setStatus(delivery.getStatus() != null ? delivery.getStatus().name() : null);
         dto.setStartLat(delivery.getStartLat());
         dto.setStartLng(delivery.getStartLng());
@@ -79,14 +80,14 @@ public class DeliveryServiceImpl implements DeliveryService {
         return result;
     }
 
-    // Nhận giao: gán droneUser cho delivery và chuyển trạng thái sang ASSIGNED
+    // Nhận giao: gán drone cho delivery và chuyển trạng thái sang ASSIGNED
     @Override
-    public DeliveryResponse acceptDelivery(Long deliveryId, Long droneUserId) {
+    public DeliveryResponse acceptDelivery(Long deliveryId, Long droneId) {
         Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy delivery với id: " + deliveryId));
-        User droneUser = userRepository.findById(droneUserId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng (drone) với id: " + droneUserId));
-        delivery.setDroneUser(droneUser);
+        Drone drone = droneRepository.findById(droneId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy drone với id: " + droneId));
+        delivery.setDrone(drone);
         delivery.setStatus(Delivery.DeliveryStatus.ASSIGNED);
         // Thêm event đánh dấu start
         DeliveryEvent startEvent = DeliveryEvent.builder()
@@ -119,6 +120,16 @@ public class DeliveryServiceImpl implements DeliveryService {
             delivery.setStatus(Delivery.DeliveryStatus.IN_PROGRESS);
         }
         deliveryRepository.save(delivery);
+
+        // Phát WebSocket GPS realtime tới topic orders/{orderId}
+        if (delivery.getOrder() != null) {
+            Long orderId = delivery.getOrder().getId();
+            Double speed = gpsRequest.getSpeedKmh();
+            Double heading = gpsRequest.getHeading();
+            Double battery = gpsRequest.getBatteryPct();
+            // ETA đơn giản hoá: 0 phút (có thể tính toán thật sau)
+            webSocketService.sendDroneGpsUpdate(orderId, gpsRequest.getLat(), gpsRequest.getLng(), 0, speed, heading, battery);
+        }
         return toResponse(delivery);
     }
 

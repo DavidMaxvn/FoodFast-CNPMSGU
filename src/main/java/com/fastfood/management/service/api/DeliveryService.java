@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface DeliveryService {
     List<DeliveryResponse> getReadyForDelivery();
-    DeliveryResponse acceptDelivery(Long deliveryId, Long droneUserId);
+    DeliveryResponse acceptDelivery(Long deliveryId, Long droneId);
     DeliveryResponse updateGpsPosition(Long deliveryId, GpsUpdateRequest gpsRequest);
     DeliveryResponse completeDelivery(Long deliveryId);
     TrackingResponse trackDelivery(Long orderId);
