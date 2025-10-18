@@ -27,7 +27,7 @@ import OrderConfirmation from './pages/OrderConfirmation';
 
 // Admin Pages
 import Dashboard from './pages/admin/Dashboard';
-// import MenuManagement from './pages/admin/MenuManagement';
+import MenuManagement from './pages/admin/MenuManagement';
 import InventoryManagement from './pages/admin/InventoryManagement';
 import OrderManagement from './pages/admin/OrderManagement';
 import StaffManagement from './pages/admin/StaffManagement';
@@ -116,7 +116,7 @@ function App() {
         <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
           <Route index element={<Dashboard />} />
           <Route path="dashboard" element={<Dashboard />} />
-          {/* <Route path="menu" element={<MenuManagement />} /> */}
+         <Route path="menu" element={<MenuManagement />} /> 
           <Route path="inventory" element={<InventoryManagement />} />
           <Route path="orders" element={<OrderManagement />} />
           <Route path="staff" element={<StaffManagement />} />

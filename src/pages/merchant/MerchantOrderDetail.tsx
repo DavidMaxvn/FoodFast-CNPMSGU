@@ -62,12 +62,12 @@ const MerchantOrderDetail: React.FC = () => {
             <List>
               {detail.items.map((it, idx) => (
                 <ListItem key={idx}>
-                  <ListItemText primary={`${it.name} x${it.qty}`} secondary={`Giá: ${it.price.toLocaleString('vi-VN')} VND`} />
+                  <ListItemText primary={`${it.name} x${it.qty}`} secondary={`Giá: $${it.price.toLocaleString('en-US')}`} />
                 </ListItem>
               ))}
             </List>
             <Divider sx={{ my: 2 }} />
-            <Typography variant="h6">Tổng: {detail.total.toLocaleString('vi-VN')} VND</Typography>
+            <Typography variant="h6">Tổng: ${detail.total.toLocaleString('en-US')}</Typography>
           </Paper>
         </Grid>
         <Grid item xs={12} md={6}>

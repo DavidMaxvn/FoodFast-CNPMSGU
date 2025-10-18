@@ -49,7 +49,7 @@ const MerchantOrders: React.FC = () => {
           <TableRow>
             <TableCell>Mã đơn</TableCell>
             <TableCell>Khách hàng</TableCell>
-            <TableCell>Tổng (VND)</TableCell>
+            <TableCell>Tổng ($)</TableCell>
             <TableCell>Trạng thái</TableCell>
             <TableCell align="right">Thao tác</TableCell>
           </TableRow>
@@ -59,7 +59,7 @@ const MerchantOrders: React.FC = () => {
             <TableRow key={o.id} hover>
               <TableCell>{o.code}</TableCell>
               <TableCell>{o.customer}</TableCell>
-              <TableCell>{o.total.toLocaleString('vi-VN')}</TableCell>
+              <TableCell>${o.total.toLocaleString('en-US')}</TableCell>
               <TableCell><Chip label={o.status} color={statusColor(o.status) as any} /></TableCell>
               <TableCell align="right">
                 <Button size="small" onClick={() => navigate(`/merchant/orders/${o.id}`)}>Chi tiết</Button>

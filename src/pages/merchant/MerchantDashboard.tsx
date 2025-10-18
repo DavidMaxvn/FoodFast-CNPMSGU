@@ -8,7 +8,7 @@ import { Box, Typography, Grid, Card, CardContent } from '@mui/material';
  */
 const stats = [
   { label: 'Đơn hôm nay', value: 42 },
-  { label: 'Doanh thu (VND)', value: 12500000 },
+  { label: 'Doanh thu ($)', value: 12500000 },
   { label: 'Phản hồi mới', value: 8 },
 ];
 
@@ -24,7 +24,7 @@ const MerchantDashboard: React.FC = () => {
             <Card>
               <CardContent>
                 <Typography variant="h6">{s.label}</Typography>
-                <Typography variant="h4" fontWeight={700}>{s.value.toLocaleString('vi-VN')}</Typography>
+                <Typography variant="h4" fontWeight={700}>${s.value.toLocaleString('en-US')}</Typography>
               </CardContent>
             </Card>
           </Grid>

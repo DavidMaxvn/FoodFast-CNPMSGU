@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -19,35 +19,69 @@ import {
   Select,
   MenuItem,
   Avatar,
-  Chip
+  Chip,
+  SelectChangeEvent,
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import {
   Add,
   Edit,
   Delete,
-  Close,
-  Upload
+  Close
 } from '@mui/icons-material';
+import ImageUpload from '../../components/ImageUpload';
+import { 
+  getAllMenuItems, 
+  createMenuItem, 
+  updateMenuItem, 
+  deleteMenuItem, 
+  MenuItemViewModel, 
+  MenuItemDTO,
+  fetchCategories,
+  fetchStores,
+  CategoryDTO,
+  StoreDTO
+} from '../../services/menu';
 
-// Mock data for menu items
-const mockMenuItems = [
-  { id: '1', name: 'Cheeseburger', category: 'Burgers', price: 8.99, image: 'https://via.placeholder.com/50', available: true },
-  { id: '2', name: 'French Fries', category: 'Sides', price: 3.99, image: 'https://via.placeholder.com/50', available: true },
-  { id: '3', name: 'Coca Cola', category: 'Drinks', price: 1.99, image: 'https://via.placeholder.com/50', available: true },
-  { id: '4', name: 'Chicken Nuggets', category: 'Sides', price: 5.99, image: 'https://via.placeholder.com/50', available: false },
-  { id: '5', name: 'Veggie Burger', category: 'Burgers', price: 7.99, image: 'https://via.placeholder.com/50', available: true },
-];
-
-// Categories for dropdown
-const categories = ['Burgers', 'Sides', 'Drinks', 'Desserts', 'Combos'];
+// Remove hardcoded categories - now using dynamic data from API
 
 const MenuManagement: React.FC = () => {
-  const [menuItems, setMenuItems] = useState(mockMenuItems);
+  const [menuItems, setMenuItems] = useState<MenuItemViewModel[]>([]);
+  const [categories, setCategories] = useState<CategoryDTO[]>([]);
+  const [stores, setStores] = useState<StoreDTO[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [currentItem, setCurrentItem] = useState<any>(null);
+  const [currentItem, setCurrentItem] = useState<Partial<MenuItemViewModel> | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
-  const handleOpenDrawer = (item?: any) => {
+  // Load menu items, categories, and stores on component mount
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [items, categoriesData, storesData] = await Promise.all([
+        getAllMenuItems(),
+        fetchCategories(),
+        fetchStores()
+      ]);
+      setMenuItems(items);
+      setCategories(categoriesData);
+      setStores(storesData);
+    } catch (err) {
+      setError('Không thể tải dữ liệu');
+      console.error('Error loading data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenDrawer = (item?: MenuItemViewModel) => {
     if (item) {
       setCurrentItem(item);
       setIsEditing(true);
@@ -55,7 +89,8 @@ const MenuManagement: React.FC = () => {
       setCurrentItem({
         name: '',
         category: '',
-        price: '',
+        store: '',
+        price: 0,
         image: '',
         available: true
       });
@@ -77,92 +112,161 @@ const MenuManagement: React.FC = () => {
     });
   };
 
-  const handleAvailabilityChange = (e: React.ChangeEvent<{ name?: string; value: unknown }>) => {
-    const { value } = e.target;
+  const handleImageUploaded = (imagePath: string) => {
     setCurrentItem({
       ...currentItem,
-      available: value === 'true'
+      image: imagePath
     });
   };
 
-  const handleSaveItem = () => {
-    if (isEditing) {
-      // Update existing item
-      setMenuItems(menuItems.map(item => 
-        item.id === currentItem.id ? currentItem : item
-      ));
-    } else {
-      // Add new item
-      const newItem = {
+  const handleSelectChange = (e: SelectChangeEvent<string>) => {
+    const { name, value } = e.target;
+    if (name === 'available') {
+      setCurrentItem({
         ...currentItem,
-        id: Date.now().toString()
-      };
-      setMenuItems([...menuItems, newItem]);
+        available: value === 'true'
+      });
+    } else {
+      setCurrentItem({
+        ...currentItem,
+        [name]: value
+      });
     }
-    handleCloseDrawer();
   };
 
-  const handleDeleteItem = (id: string) => {
-    setMenuItems(menuItems.filter(item => item.id !== id));
+  const handleSaveItem = async () => {
+    if (!currentItem?.name || !currentItem?.price || !currentItem?.category || !currentItem?.store) {
+      setError('Vui lòng điền đầy đủ thông tin bao gồm category và store');
+      return;
+    }
+
+    try {
+      // Find category and store objects
+      const selectedCategory = categories.find(cat => cat.name === currentItem.category);
+      const selectedStore = stores.find(store => store.name === currentItem.store);
+
+      if (!selectedCategory || !selectedStore) {
+        setError('Category hoặc Store không hợp lệ');
+        return;
+      }
+
+      const newItem: Omit<MenuItemDTO, 'id'> = {
+        name: currentItem.name,
+        description: currentItem.description || '',
+        price: Number(currentItem.price),
+        imageUrl: currentItem.image || '',
+        available: currentItem.available ?? true,
+        category: { id: selectedCategory.id, name: selectedCategory.name },
+        store: { id: selectedStore.id, name: selectedStore.name }
+      };
+
+      if (isEditing && currentItem.id) {
+        await updateMenuItem(Number(currentItem.id), newItem);
+      } else {
+        await createMenuItem(newItem);
+      }
+
+      await loadData(); // Reload the list
+      handleCloseDrawer();
+    } catch (err) {
+      setError('Không thể lưu menu item');
+      console.error('Error saving menu item:', err);
+    }
+  };
+
+  const handleDeleteItem = async (id: string) => {
+    try {
+      await deleteMenuItem(Number(id));
+      await loadData(); // Reload the list
+    } catch (err) {
+      setError('Không thể xóa menu item');
+      console.error('Error deleting menu item:', err);
+    }
   };
 
   return (
-    <Box>
+    <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" component="h1">
           Menu Management
         </Typography>
         <Button
           variant="contained"
-          color="primary"
           startIcon={<Add />}
           onClick={() => handleOpenDrawer()}
         >
-          Add New Item
+          Add Item
         </Button>
       </Box>
-      
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Image</TableCell>
-              <TableCell>Name</TableCell>
-              <TableCell>Category</TableCell>
-              <TableCell>Price</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {menuItems.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell>
-                  <Avatar src={item.image} alt={item.name} variant="rounded" />
-                </TableCell>
-                <TableCell>{item.name}</TableCell>
-                <TableCell>{item.category}</TableCell>
-                <TableCell>${item.price.toFixed(2)}</TableCell>
-                <TableCell>
-                  <Chip 
-                    label={item.available ? 'Available' : 'Unavailable'} 
-                    color={item.available ? 'success' : 'error'} 
-                    size="small" 
-                  />
-                </TableCell>
-                <TableCell align="right">
-                  <IconButton color="primary" onClick={() => handleOpenDrawer(item)}>
-                    <Edit />
-                  </IconButton>
-                  <IconButton color="error" onClick={() => handleDeleteItem(item.id)}>
-                    <Delete />
-                  </IconButton>
-                </TableCell>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Image</TableCell>
+                <TableCell>Name</TableCell>
+                <TableCell>Category</TableCell>
+                <TableCell>Store</TableCell>
+                <TableCell>Price</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Actions</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+            </TableHead>
+            <TableBody>
+              {menuItems.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell>
+                    <Avatar 
+                      src={item.image} 
+                      alt={item.name} 
+                      variant="rounded"
+                      sx={{ width: 50, height: 50 }}
+                    />
+                  </TableCell>
+                  <TableCell>{item.name}</TableCell>
+                  <TableCell>{item.category}</TableCell>
+                  <TableCell>{item.store}</TableCell>
+                  <TableCell>${item.price.toLocaleString('en-US')}</TableCell>
+                  <TableCell>
+                    <Chip 
+                      label={item.available ? 'Available' : 'Unavailable'} 
+                      color={item.available ? 'success' : 'error'}
+                      size="small"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <IconButton 
+                      onClick={() => handleOpenDrawer(item)}
+                      color="primary"
+                      size="small"
+                    >
+                      <Edit />
+                    </IconButton>
+                    <IconButton 
+                      onClick={() => handleDeleteItem(item.id)}
+                      color="error"
+                      size="small"
+                    >
+                      <Delete />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
       
       <Drawer
         anchor="right"
@@ -183,42 +287,13 @@ const MenuManagement: React.FC = () => {
           </Box>
           
           <Grid container spacing={2}>
-            <Grid item xs={12} sx={{ textAlign: 'center', mb: 2 }}>
-              {currentItem?.image ? (
-                <Avatar 
-                  src={currentItem.image} 
-                  alt={currentItem.name} 
-                  variant="rounded"
-                  sx={{ width: 100, height: 100, mx: 'auto' }}
-                />
-              ) : (
-                <Box 
-                  sx={{ 
-                    width: 100, 
-                    height: 100, 
-                    bgcolor: 'grey.200', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    borderRadius: 1,
-                    mx: 'auto'
-                  }}
-                >
-                  <Upload />
-                </Box>
-              )}
-              <Button 
-                variant="outlined" 
-                component="label" 
-                size="small" 
-                sx={{ mt: 1 }}
-              >
-                Upload Image
-                <input
-                  type="file"
-                  hidden
-                />
-              </Button>
+            <Grid item xs={12}>
+              <ImageUpload
+                onImageUploaded={handleImageUploaded}
+                currentImage={currentItem?.image}
+                folder="products"
+                maxSize={10}
+              />
             </Grid>
             
             <Grid item xs={12}>
@@ -233,26 +308,45 @@ const MenuManagement: React.FC = () => {
               />
             </Grid>
             
-            {/* <Grid item xs={12}>
+            <Grid item xs={12}>
               <FormControl fullWidth margin="normal">
                 <InputLabel>Category</InputLabel>
                 <Select
                   name="category"
                   value={currentItem?.category || ''}
-                  onChange={handleInputChange}
+                  onChange={handleSelectChange}
                   label="Category"
                   required
                 >
                   {categories.map((category) => (
-                    <MenuItem key={category} value={category}>
-                      {category}
+                    <MenuItem key={category.id} value={category.name}>
+                      {category.name}
                     </MenuItem>
                   ))}
                 </Select>
               </FormControl>
-            </Grid> */}
+            </Grid>
             
-            {/* <Grid item xs={12}>
+            <Grid item xs={12}>
+              <FormControl fullWidth margin="normal">
+                <InputLabel>Store</InputLabel>
+                <Select
+                  name="store"
+                  value={currentItem?.store || ''}
+                  onChange={handleSelectChange}
+                  label="Store"
+                  required
+                >
+                  {stores.map((store) => (
+                    <MenuItem key={store.id} value={store.name}>
+                      {store.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            
+            <Grid item xs={12}>
               <TextField
                 fullWidth
                 label="Price"
@@ -267,21 +361,21 @@ const MenuManagement: React.FC = () => {
                 }}
               />
             </Grid>
-             */}
-            {/* <Grid item xs={12}>
+            
+            <Grid item xs={12}>
               <FormControl fullWidth margin="normal">
                 <InputLabel>Availability</InputLabel>
                 <Select
                   name="available"
                   value={currentItem?.available ? 'true' : 'false'}
-                  onChange={handleAvailabilityChange}
+                  onChange={handleSelectChange}
                   label="Availability"
                 >
                   <MenuItem value="true">Available</MenuItem>
                   <MenuItem value="false">Unavailable</MenuItem>
                 </Select>
               </FormControl>
-            </Grid> */}
+            </Grid>
             
             <Grid item xs={12} sx={{ mt: 2 }}>
               <Button

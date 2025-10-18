@@ -11,7 +11,9 @@ import {
   Box,
   Chip,
   Skeleton,
-  IconButton
+  IconButton,
+  Alert,
+  CircularProgress
 } from '@mui/material';
 import { Add, Search } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -19,15 +21,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { fetchMenuStart, fetchMenuSuccess, fetchMenuFailure, filterByCategory, searchItems } from '../store/slices/menuSlice';
 import { addToCart } from '../store/slices/cartSlice';
-// import { fetchMenuItems } from '../services/menu';
-
-// Dùng mock menu để test chức năng thêm vào giỏ
-const MOCK_HOME_MENU = [
-  { id: 'm1', name: 'Cheeseburger', description: 'Burger phô mai thơm ngon', price: 59000, image: 'https://source.unsplash.com/random/600x400/?burger', category: 'Burgers', available: true },
-  { id: 'm2', name: 'French Fries', description: 'Khoai tây chiên giòn', price: 29000, image: 'https://source.unsplash.com/random/600x400/?fries', category: 'Sides', available: true },
-  { id: 'm3', name: 'Fried Chicken', description: 'Gà rán giòn tan', price: 89000, image: 'https://source.unsplash.com/random/600x400/?chicken', category: 'Chicken', available: true },
-  { id: 'm4', name: 'Coca Cola', description: 'Nước uống có ga', price: 19000, image: 'http://localhost:8081/images/menu/drinks/coca-cola.jpg', category: 'Drinks', available: true },
-];
+import { fetchMenuItems, searchMenuItems } from '../services/menu';
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
@@ -35,12 +29,56 @@ const Home: React.FC = () => {
   const { filteredItems, items, isLoading } = useSelector((state: RootState) => state.menu);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [error, setError] = useState<string | null>(null);
 
-  // Load mock items without API
+  // Load menu items from API
   useEffect(() => {
-    dispatch(fetchMenuStart());
-    dispatch(fetchMenuSuccess(MOCK_HOME_MENU as any));
+    const loadMenuItems = async () => {
+      try {
+        dispatch(fetchMenuStart());
+        setError(null);
+        const menuItems = await fetchMenuItems(0, 50);
+        dispatch(fetchMenuSuccess(menuItems));
+      } catch (err) {
+        console.error('Failed to load menu items:', err);
+        setError('Không thể tải danh sách sản phẩm. Vui lòng thử lại sau.');
+        dispatch(fetchMenuFailure('Failed to load menu items'));
+      }
+    };
+
+    loadMenuItems();
   }, [dispatch]);
+
+  // Handle search with debounce
+  useEffect(() => {
+    const handleSearch = async () => {
+      if (searchTerm.trim()) {
+        try {
+          dispatch(fetchMenuStart());
+          const searchResults = await searchMenuItems(searchTerm, 0, 50);
+          dispatch(fetchMenuSuccess(searchResults));
+        } catch (err) {
+          console.error('Search failed:', err);
+          setError('Tìm kiếm thất bại. Vui lòng thử lại.');
+          dispatch(fetchMenuFailure('Search failed'));
+        }
+      } else {
+        // Load all items when search is cleared
+        try {
+          dispatch(fetchMenuStart());
+          const menuItems = await fetchMenuItems(0, 50);
+          dispatch(fetchMenuSuccess(menuItems));
+        } catch (err) {
+          console.error('Failed to load menu items:', err);
+          setError('Không thể tải danh sách sản phẩm.');
+          dispatch(fetchMenuFailure('Failed to load menu items'));
+        }
+      }
+    };
+
+    const timeoutId = setTimeout(handleSearch, 300); // Debounce search
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, dispatch]);
 
   const handleCategoryFilter = (category: string) => {
     setSelectedCategory(category);
@@ -108,6 +146,12 @@ const Home: React.FC = () => {
         </Box>
       </Box>
       
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
+      
       <Grid container spacing={3}>
         {isLoading ? (
           // Skeleton loading
@@ -139,8 +183,8 @@ const Home: React.FC = () => {
                   loading="lazy"
                   onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
                     const target = e.currentTarget;
-                    if (target.src && !target.src.endsWith('/placeholder-item.svg')) {
-                      target.src = '/placeholder-item.svg';
+                    if (target.src && !target.src.includes('placeholder')) {
+                      target.src = 'https://via.placeholder.com/600x400/f0f0f0/666666?text=No+Image';
                     }
                   }}
                   sx={{ cursor: 'pointer' }}
@@ -154,7 +198,7 @@ const Home: React.FC = () => {
                     {item.description}
                   </Typography>
                   <Typography variant="h6" color="primary" sx={{ mt: 2 }}>
-                    ${item.price.toFixed(2)}
+                    ${item.price.toLocaleString('en-US')}
                   </Typography>
                 </CardContent>
                 <CardActions>
