@@ -43,8 +43,15 @@ public class WebSecurityConfig {
         // Public static resources (served via resource handler)
         .requestMatchers(HttpMethod.GET, "/images/**").permitAll()
         .requestMatchers(HttpMethod.GET, "/api/images/**").permitAll()
+        .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
+        // File upload endpoints
+        .requestMatchers(HttpMethod.POST, "/files/**").permitAll()
         // Public menu browsing endpoints
         .requestMatchers(HttpMethod.GET, "/menu/**").permitAll()
+        // Admin menu management endpoints (temporarily allow for testing)
+        .requestMatchers(HttpMethod.POST, "/menu/**").permitAll()
+        .requestMatchers(HttpMethod.PUT, "/menu/**").permitAll()
+        .requestMatchers(HttpMethod.DELETE, "/menu/**").permitAll()
         .requestMatchers(HttpMethod.GET, "/public/**").permitAll()
         // Cho phép VNPay tạo payment và trả về (callback) không cần JWT
         .requestMatchers(HttpMethod.POST, "/payments/vnpay/**").permitAll()

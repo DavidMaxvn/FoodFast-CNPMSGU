@@ -3,6 +3,7 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\ent
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\config\ImagesResourceConfig.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\StoreController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\OrderResponse.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\ImageStorage.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\exception\GlobalExceptionHandler.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\User.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\api\DeliveryService.java
@@ -30,6 +31,7 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\sec
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\request\OrderRequest.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\config\WebSocketConfig.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\impl\UserDetailsServiceImpl.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\FileController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\impl\InventoryServiceImpl.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\OrderActivity.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\model\InventoryDTO.java
@@ -53,6 +55,7 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\rep
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\RoleRepository.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\impl\WebSocketService.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\Delivery.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\LocalImageStorage.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\OrderController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\Drone.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\StoreStaffRepository.java

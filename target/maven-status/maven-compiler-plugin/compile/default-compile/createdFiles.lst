@@ -92,7 +92,6 @@ com\fastfood\management\repository\AddressRepository.class
 com\fastfood\management\repository\MenuItemRepository.class
 com\fastfood\management\repository\OrderItemRepository.class
 com\fastfood\management\dto\request\LoginRequest.class
-com\fastfood\management\controller\MenuController.class
 com\fastfood\management\dto\response\MenuItemResponse.class
 com\fastfood\management\security\UserDetailsImpl.class
 com\fastfood\management\entity\Delivery$DeliveryBuilder.class

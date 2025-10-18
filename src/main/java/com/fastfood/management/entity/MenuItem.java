@@ -39,11 +39,9 @@ public class MenuItem {
     
     @ManyToOne
     @JoinColumn(name = "category_id")
-    @JsonManagedReference(value = "category-menuItems")
     private Category category;
 
     @ManyToOne
     @JoinColumn(name = "store_id")
-    @JsonBackReference(value = "store-menuItems")
     private Store store;
 }

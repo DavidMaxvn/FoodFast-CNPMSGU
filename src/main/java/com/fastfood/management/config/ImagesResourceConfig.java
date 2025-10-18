@@ -8,6 +8,8 @@ import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.resource.PathResourceResolver;
 
+import java.nio.file.Paths;
+
 @Configuration
 public class ImagesResourceConfig implements WebMvcConfigurer {
     private static final Logger log = LoggerFactory.getLogger(ImagesResourceConfig.class);
@@ -15,8 +17,12 @@ public class ImagesResourceConfig implements WebMvcConfigurer {
     @Value("${app.images.dir}")
     private String imagesDir;
 
+    @Value("${app.upload-dir:uploads}")
+    private String uploadDir;
+
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        // Existing images mapping
         String dir = imagesDir;
         if (dir == null || dir.isBlank()) {
             // Default fallback (should be overridden in application.properties)
@@ -38,5 +44,11 @@ public class ImagesResourceConfig implements WebMvcConfigurer {
             .addResolver(new PathResourceResolver());
 
         log.info("Static images mapped: '/images/**' -> {}", location);
+
+        // New uploads mapping for POC
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations("file:" + Paths.get(uploadDir).toAbsolutePath().toString() + "/");
+
+        log.info("Static uploads mapped: '/uploads/**' -> file:{}/", Paths.get(uploadDir).toAbsolutePath());
     }
 }
