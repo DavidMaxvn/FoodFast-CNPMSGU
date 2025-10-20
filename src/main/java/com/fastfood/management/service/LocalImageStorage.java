@@ -29,9 +29,14 @@ public class LocalImageStorage implements ImageStorage {
         String date = LocalDate.now().toString();
         String safeName = UUID.randomUUID() + "-" + sanitize(file.getOriginalFilename());
         
+        // Ensure absolute path by resolving root first
+        Path rootPath = Paths.get(root).toAbsolutePath().normalize();
+        
         // Create directory structure: uploads/folder/date
-        Path dir = Paths.get(root, folder, date);
+        Path dir = rootPath.resolve(folder).resolve(date);
         Files.createDirectories(dir);
+        
+        log.info("Creating directory: {}", dir);
         
         // Store file
         Path target = dir.resolve(safeName);
@@ -40,7 +45,7 @@ public class LocalImageStorage implements ImageStorage {
         // Return relative path for database storage (always starts with /uploads)
         String relativePath = "/uploads/" + folder + "/" + date + "/" + safeName;
         
-        log.info("File stored: {} -> {}", file.getOriginalFilename(), relativePath);
+        log.info("File stored: {} -> {} (absolute: {})", file.getOriginalFilename(), relativePath, target);
         return relativePath;
     }
 
