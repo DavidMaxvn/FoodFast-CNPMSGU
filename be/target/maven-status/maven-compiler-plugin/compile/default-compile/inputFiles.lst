@@ -54,7 +54,6 @@ D:\FoodFast-CNPMSGU\src\main\java\com\fastfood\management\repository\OrderReposi
 D:\FoodFast-CNPMSGU\src\main\java\com\fastfood\management\dto\request\AddressRequest.java
 D:\FoodFast-CNPMSGU\src\main\java\com\fastfood\management\entity\Role.java
 D:\FoodFast-CNPMSGU\src\main\java\com\fastfood\management\dto\response\PaymentResponse.java
-D:\FoodFast-CNPMSGU\src\main\java\com\fastfood\management\config\WebSecurityConfig.java
 D:\FoodFast-CNPMSGU\src\main\java\com\fastfood\management\controller\MenuController.java
 D:\FoodFast-CNPMSGU\src\main\java\com\fastfood\management\service\impl\WebSocketService.java
 D:\FoodFast-CNPMSGU\src\main\java\com\fastfood\management\service\api\UserService.java

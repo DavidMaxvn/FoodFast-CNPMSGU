@@ -16,7 +16,6 @@ import com.fastfood.management.security.UserDetailsImpl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,7 +33,6 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final UserMapper userMapper;
-    private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
 //
     @Override
@@ -46,7 +44,7 @@ public class UserServiceImpl implements UserService {
         User user = User.builder()
                 .email(registerRequest.getEmail())
                 .username(registerRequest.getUsername())
-                .passwordHash(passwordEncoder.encode(registerRequest.getPassword()))
+                .passwordHash(registerRequest.getPassword()) // Plain text password (NO ENCRYPTION)
                 .fullName(registerRequest.getFullName())
                 .phone(registerRequest.getPhoneNumber() != null ? registerRequest.getPhoneNumber() : "")
                 .enabled(true)
@@ -66,7 +64,8 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findByEmail(loginRequest.getEmail())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        if (!passwordEncoder.matches(loginRequest.getPassword(), user.getPasswordHash())) {
+        // Plain text password comparison (NO ENCRYPTION)
+        if (!loginRequest.getPassword().equals(user.getPasswordHash())) {
             throw new IllegalArgumentException("Invalid credentials");
         }
 

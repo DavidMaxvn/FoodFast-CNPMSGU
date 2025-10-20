@@ -18,7 +18,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,12 +32,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AuthController {
 
-    // Phiên bản cơ bản: dùng trực tiếp UserRepository + PasswordEncoder để xác thực
+    // Phiên bản cơ bản: dùng trực tiếp UserRepository (plain text password - không mã hóa)
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final StoreStaffRepository storeStaffRepository;
     private final StoreRepository storeRepository;
-    private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
 
     @PostMapping("/login")
@@ -53,8 +51,8 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("message", "Tài khoản đang bị vô hiệu hoá"));
         }
-        // (BCrypt)
-        boolean matches = passwordEncoder.matches(loginRequest.getPassword(), user.getPasswordHash());
+        // Plain text password comparison (NO ENCRYPTION)
+        boolean matches = loginRequest.getPassword().equals(user.getPasswordHash());
         if (!matches) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("message", "Sai mật khẩu"));
@@ -130,7 +128,7 @@ public class AuthController {
         User user = User.builder()
                 .email(req.getEmail())
                 .username(req.getUsername())
-                .passwordHash(passwordEncoder.encode(req.getPassword()))
+                .passwordHash(req.getPassword()) // Plain text password (NO ENCRYPTION)
                 .fullName(req.getFullName())
                 .phone(req.getPhoneNumber() != null ? req.getPhoneNumber() : "")
                 .enabled(true)

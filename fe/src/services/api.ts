@@ -9,11 +9,26 @@ const api: AxiosInstance = axios.create({
   },
 });
 
+// List of public endpoints that don't require authentication
+const PUBLIC_ENDPOINTS = [
+  '/stores',
+  '/menu',
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh',
+];
+
+// Check if endpoint is public
+const isPublicEndpoint = (url: string): boolean => {
+  return PUBLIC_ENDPOINTS.some(endpoint => url.includes(endpoint));
+};
+
 // Request interceptor to add authentication token
 api.interceptors.request.use(
   (config) => {
+    // Only add token for non-public endpoints
     const token = localStorage.getItem('token');
-    if (token) {
+    if (token && !isPublicEndpoint(config.url || '')) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
