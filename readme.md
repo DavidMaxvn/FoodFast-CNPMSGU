@@ -28,14 +28,6 @@ Srpingboot, Postman, VNPay API, Database MySQL, Drone services và các công ng
 
 <h2>Project screenshots</h2>
 
-<h3>Home page</h3>
-
-![foodfast drone deli home page](./screenshots/Main_HomePage.jpeg)
-
-<h3>MenuStores page</h3>
-
-![foodfast drone deli MenuStores page](./screenshots/MenuStores.jpeg)
-
 <h3>Customer Home page</h3>
 
 ![foodfast drone deli Customer Home page](./screenshots/Customer_HomePage.jpeg)
@@ -48,6 +40,58 @@ Srpingboot, Postman, VNPay API, Database MySQL, Drone services và các công ng
 
 ![foodfast drone deli Merchant Dashboard page](./screenshots/MerchantPortal_Dashboard.jpeg)
 
-<h3>Admin dashboard</h3>
+<h3>Merchant Categories page</h3>
+
+![foodfast drone deli Merchant Dashboard page](./screenshots/MerchantPortal_Categories.jpeg)
+
+<h3>Merchant Feedback page</h3>
+
+![foodfast drone deli Merchant Dashboard page](./screenshots/MerchantPortal_Feedback.jpeg)
+
+<h3>Merchant Inventory page</h3>
+
+![foodfast drone deli Merchant Dashboard page](./screenshots/MerchantPortal_Inventory.jpeg)
+
+<h3>Merchant Menu page</h3>
+
+![foodfast drone deli Merchant Dashboard page](./screenshots/MerchantPortal_Menu.jpeg)
+
+<h3>Merchant Orders page</h3>
+
+![foodfast drone deli Merchant Dashboard page](./screenshots/MerchantPortal_Orders.jpeg)
+
+<h3>Merchant Reports page</h3>
+
+![foodfast drone deli Merchant Dashboard page](./screenshots/MerchantPortal_Reports.jpeg)
+
+<h3>Merchant Staff Management page</h3>
+
+![foodfast drone deli Merchant Dashboard page](./screenshots/MerchantPortal_StaffManager.jpeg)
+
+<h3>Admin Dash Board</h3>
 
 ![foodfast drone deli admin orders page](./screenshots/AdminPortal_Dashboard.jpeg)
+
+<h3>Admin Menu Management</h3>
+
+![foodfast drone deli admin orders page](./screenshots/AdminPortal_MenuManagement.jpeg)
+
+<h3>Admin Inventory Management</h3>
+
+![foodfast drone deli admin orders page](./screenshots/AdminPortal_InventoryManagement.jpeg)
+
+<h3>Admin Orders Management</h3>
+
+![foodfast drone deli admin orders page](./screenshots/AdminPortal_OrderManagement.jpeg)
+
+<h3>Admin Staff Management</h3>
+
+![foodfast drone deli admin orders page](./screenshots/AdminPortal_StaffManagement.jpeg)
+
+<h3>Admin Kitchen Board</h3>
+
+![foodfast drone deli admin orders page](./screenshots/AdminPortal_KitchenBoard.jpeg)
+
+<h3>Admin Drone Console</h3>
+
+![foodfast drone deli admin orders page](./screenshots/AdminPortal_DroneConsole.jpeg)
