@@ -51,6 +51,9 @@ public class Drone {
     @Column(name = "current_lng")
     private Double currentLng;
 
+    @Column(name = "last_assigned_at")
+    private LocalDateTime lastAssignedAt;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -60,6 +63,13 @@ public class Drone {
     private LocalDateTime lastSeenAt;
 
     public enum DroneStatus {
-        IDLE, ACTIVE, MAINTENANCE, OFFLINE
+        OFFLINE,              // Drone không hoạt động
+        IDLE,                 // Drone rảnh, sẵn sàng nhận nhiệm vụ
+        ASSIGNED,             // Drone được gán đơn hàng
+        EN_ROUTE_TO_STORE,    // Drone đang bay đến cửa hàng (W0→W1)
+        AT_STORE,             // Drone đang ở cửa hàng (pickup)
+        EN_ROUTE_TO_CUSTOMER, // Drone đang bay đến khách hàng (W1→W2)
+        ARRIVING,             // Drone đang tiếp cận khách hàng
+        RETURN_TO_BASE        // Drone đang quay về base (W2→W3)
     }
 }

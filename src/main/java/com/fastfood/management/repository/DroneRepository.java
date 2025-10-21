@@ -7,4 +7,5 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface DroneRepository extends JpaRepository<Drone, Long> {
     java.util.List<Drone> findByStatus(Drone.DroneStatus status);
+    long countByStatus(Drone.DroneStatus status);
 }

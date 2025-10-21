@@ -44,6 +44,15 @@ public class Address {
     
     private Double lng;
     
+    // Convenience methods for drone delivery
+    public Double getLatitude() {
+        return lat;
+    }
+    
+    public Double getLongitude() {
+        return lng;
+    }
+    
     @Column(name = "is_default")
     @Builder.Default
     private boolean isDefault = false;

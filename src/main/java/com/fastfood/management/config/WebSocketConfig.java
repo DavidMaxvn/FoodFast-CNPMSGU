@@ -7,6 +7,18 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
+/**
+ * Cấu hình WebSocket STOMP cho drone delivery POC
+ * 
+ * Endpoints:
+ * - /ws: WebSocket connection endpoint
+ * 
+ * Topics:
+ * - /topic/drone/{droneId}/gps: GPS updates cho drone cụ thể
+ * - /topic/drone/{droneId}/state: State changes cho drone cụ thể  
+ * - /topic/delivery/{deliveryId}/eta: ETA updates cho delivery cụ thể
+ * - /topic/delivery/{deliveryId}/events: Delivery events
+ */
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
@@ -16,19 +28,25 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        // Enable a simple memory-based message broker to send messages to clients
-        // on destinations prefixed with /topic
-        registry.enableSimpleBroker("/topic");
+        // Bật simple broker cho các topic và queue
+        registry.enableSimpleBroker("/topic", "/queue");
         
-        // Set prefix for messages bound for @MessageMapping methods
+        // Prefix cho các message từ client
         registry.setApplicationDestinationPrefixes("/app");
+        
+        // User-specific destinations
+        registry.setUserDestinationPrefix("/user");
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // Register STOMP endpoints
+        // Đăng ký WebSocket endpoint với SockJS fallback
         registry.addEndpoint(websocketPath)
                 .setAllowedOriginPatterns("*")
                 .withSockJS();
+        
+        // Endpoint không có SockJS cho native WebSocket clients
+        registry.addEndpoint(websocketPath)
+                .setAllowedOriginPatterns("*");
     }
 }

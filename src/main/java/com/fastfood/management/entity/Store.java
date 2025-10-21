@@ -39,6 +39,15 @@ public class Store {
     private Double lat;
 
     private Double lng;
+    
+    // Convenience methods for drone delivery
+    public Double getLatitude() {
+        return lat;
+    }
+    
+    public Double getLongitude() {
+        return lng;
+    }
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
