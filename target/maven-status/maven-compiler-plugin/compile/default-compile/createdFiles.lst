@@ -85,6 +85,7 @@ com\fastfood\management\controller\DroneController.class
 com\fastfood\management\security\JwtTokenProvider.class
 com\fastfood\management\entity\OrderItem$OrderItemBuilder.class
 com\fastfood\management\dto\request\CategoryRequest.class
+com\fastfood\management\config\WebSecurityConfig.class
 com\fastfood\management\service\impl\WebSocketService$WebSocketMessage.class
 com\fastfood\management\service\impl\WebSocketService$GpsUpdatePayload.class
 com\fastfood\management\entity\InventoryTransaction$TxnType.class

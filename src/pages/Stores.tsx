@@ -266,12 +266,10 @@ const Stores: React.FC = () => {
       try {
         setLoading(true);
         const data = await fetchStores(true);
-        // If API returns data, use it; otherwise fallback to mock
-        setStores(data.length > 0 ? data : MOCK_STORES);
+        setStores(data.length ? data : MOCK_STORES);
         setError('');
-      } catch (err: any) {
-        // Fallback to mock when API fails (403, 404, network error, etc.)
-        console.warn('API call failed, using mock data:', err.message || err);
+      } catch {
+        // Fallback to mock when API fails
         setStores(MOCK_STORES);
         setError('');
       } finally {
