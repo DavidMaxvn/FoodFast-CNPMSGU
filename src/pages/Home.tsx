@@ -198,7 +198,7 @@ const Home: React.FC = () => {
                     {item.description}
                   </Typography>
                   <Typography variant="h6" color="primary" sx={{ mt: 2 }}>
-                    ${item.price.toLocaleString('en-US')}
+                    ${item.price.toLocaleString('vi-VN')}
                   </Typography>
                 </CardContent>
                 <CardActions>

@@ -33,6 +33,7 @@ import OrderManagement from './pages/admin/OrderManagement';
 import StaffManagement from './pages/admin/StaffManagement';
 import KitchenBoard from './pages/admin/KitchenBoard';
 import DroneConsole from './pages/admin/DroneConsole';
+import DroneTracking from './pages/admin/DroneTracking';
 // Merchant/Kitchen Portal Pages
 import MerchantHome from './pages/merchant/MerchantHome';
 import MerchantDashboard from './pages/merchant/MerchantDashboard';
@@ -122,6 +123,7 @@ function App() {
           <Route path="staff" element={<StaffManagement />} />
           <Route path="kitchen" element={<KitchenBoard />} />
           <Route path="drones" element={<DroneConsole />} />
+          <Route path="drone-tracking" element={<DroneTracking />} />
         </Route>
 
         {/* Merchant/Kitchen Portal */}

@@ -1,6 +1,7 @@
 {
-  "short_name": "Fast Food",
-  "name": "Fast Food Management System",
+  "short_name": "FoodFast",
+  "name": "FoodFast - Fast Food Management & Drone Delivery",
+  "description": "Đặt đồ ăn nhanh, giao hàng tận nơi",
   "icons": [
     {
       "src": "favicon.ico",
@@ -8,18 +9,21 @@
       "type": "image/x-icon"
     },
     {
-      "src": "logo192.png",
-      "type": "image/png",
-      "sizes": "192x192"
+      "src": "logo192.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192",
+      "purpose": "any maskable"
     },
     {
-      "src": "logo512.png",
-      "type": "image/png",
-      "sizes": "512x512"
+      "src": "logo512.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "any maskable"
     }
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "theme_color": "#FF3D00",
+  "background_color": "#ffffff",
+  "orientation": "portrait"
 }

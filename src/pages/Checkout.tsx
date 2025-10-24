@@ -487,23 +487,15 @@ const Checkout: React.FC = () => {
                     secondary={`Quantity: ${item.quantity}`}
                   />
                   <Typography variant="body2">
-                    ${(item.price * item.quantity).toFixed(2)}
+                    {(item.price * item.quantity).toLocaleString('vi-VN')}đ
                   </Typography>
                 </ListItem>
               ))}
               <Divider />
               <ListItem sx={{ py: 1, px: 0 }}>
-                <ListItemText primary="Subtotal" />
-                <Typography variant="body2">${totalAmount.toFixed(2)}</Typography>
-              </ListItem>
-              <ListItem sx={{ py: 1, px: 0 }}>
-                <ListItemText primary="Delivery Fee" />
-                <Typography variant="body2">$2.00</Typography>
-              </ListItem>
-              <ListItem sx={{ py: 1, px: 0 }}>
                 <ListItemText primary="Total" />
                 <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                  ${(totalAmount + 2).toFixed(2)}
+                  {totalAmount.toLocaleString('vi-VN')}đ
                 </Typography>
               </ListItem>
             </List>

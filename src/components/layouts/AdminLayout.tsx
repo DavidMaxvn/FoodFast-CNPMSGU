@@ -24,6 +24,7 @@ import {
   People,
   Kitchen,
   FlightTakeoff,
+  GpsFixed,
   AccountCircle,
   Logout,
   ChevronLeft
@@ -66,6 +67,7 @@ const AdminLayout: React.FC = () => {
     { text: 'Staff', icon: <People />, path: '/admin/staff' },
     { text: 'Kitchen Board', icon: <Kitchen />, path: '/admin/kitchen' },
     { text: 'Drone Console', icon: <FlightTakeoff />, path: '/admin/drones' },
+    { text: 'Drone Tracking', icon: <GpsFixed />, path: '/admin/drone-tracking' },
   ];
 
   return (

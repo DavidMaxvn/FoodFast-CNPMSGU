@@ -88,6 +88,21 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
     [droneLocation]
   );
 
+  // Calculate distance between drone and customer
+  const calculateDistance = (point1: LocationPoint, point2: LocationPoint): number => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (point2.lat - point1.lat) * Math.PI / 180;
+    const dLng = (point2.lng - point1.lng) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(point1.lat * Math.PI / 180) * Math.cos(point2.lat * Math.PI / 180) *
+              Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  const [estimatedTime, setEstimatedTime] = useState<number>(0);
+  const [routeDistance, setRouteDistance] = useState<number>(0);
+
   // Simulate drone movement for demo
   const [currentDroneLocation, setCurrentDroneLocation] = useState<LocationPoint>(defaultDrone);
 
@@ -120,6 +135,16 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
           if (isMounted) {
             if (route) {
               setRouteCoordinates(route);
+              
+              // Calculate route distance and estimated time
+              const distance = calculateDistance(currentDroneLocation, defaultCustomer);
+              setRouteDistance(distance);
+              
+              // Estimate delivery time (assuming drone speed of 30 km/h)
+              const droneSpeed = 30; // km/h
+              const timeInHours = distance / droneSpeed;
+              const timeInMinutes = Math.ceil(timeInHours * 60);
+              setEstimatedTime(timeInMinutes);
             } else {
               setError('Không thể tải route từ OSRM API');
             }
@@ -135,7 +160,7 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
     };
 
     fetchRoute();
-  }, [currentDroneLocation, defaultCustomer, isMounted]);
+  }, [currentDroneLocation, defaultCustomer, isMounted, calculateDistance]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -200,13 +225,20 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
           <Marker position={currentDroneLocation} icon={droneIcon}>
             <Popup>
               <Box>
-                <Typography variant="subtitle2">🚁 Drone Giao Hàng</Typography>
-                <Typography variant="caption">
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#1976d2' }}>
+                   Drone Giao Hàng
+                </Typography>
+                <Typography variant="caption" display="block">
                   Đơn hàng: #{orderId || 'DEMO'}
                 </Typography>
-                <br />
-                <Typography variant="caption">
-                  Vị trí: {currentDroneLocation.lat.toFixed(4)}, {currentDroneLocation.lng.toFixed(4)}
+                <Typography variant="caption" display="block">
+                  Khoảng cách còn lại: {routeDistance > 0 ? `${routeDistance.toFixed(2)} km` : 'Đang tính...'}
+                </Typography>
+                <Typography variant="caption" display="block">
+                  Thời gian dự kiến: {estimatedTime > 0 ? `${estimatedTime} phút` : 'Đang tính...'}
+                </Typography>
+                <Typography variant="caption" display="block" sx={{ color: '#666' }}>
+                  GPS: {currentDroneLocation.lat.toFixed(4)}, {currentDroneLocation.lng.toFixed(4)}
                 </Typography>
               </Box>
             </Popup>
@@ -216,13 +248,14 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
           <Marker position={defaultCustomer} icon={customerIcon}>
             <Popup>
               <Box>
-                <Typography variant="subtitle2"> Địa Chỉ Giao Hàng</Typography>
-                <Typography variant="caption">
-                  Khách hàng đang chờ
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#4caf50' }}>
+                   Địa Chỉ Giao Hàng
                 </Typography>
-                <br />
-                <Typography variant="caption">
-                  Vị trí: {defaultCustomer.lat.toFixed(4)}, {defaultCustomer.lng.toFixed(4)}
+                <Typography variant="caption" display="block">
+                  Khách hàng đang chờ nhận hàng
+                </Typography>
+                <Typography variant="caption" display="block" sx={{ color: '#666' }}>
+                  GPS: {defaultCustomer.lat.toFixed(4)}, {defaultCustomer.lng.toFixed(4)}
                 </Typography>
               </Box>
             </Popup>
@@ -232,9 +265,10 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
           {routeCoordinates.length > 0 && (
             <Polyline
               positions={routeCoordinates}
-              color="#2196f3"
-              weight={4}
-              opacity={0.7}
+              color="#ff5722"
+              weight={5}
+              opacity={0.8}
+              dashArray="10, 5"
             />
           )}
         </MapContainer>
@@ -246,20 +280,32 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
           position: 'absolute',
           bottom: 10,
           left: 10,
-          bgcolor: 'rgba(255, 255, 255, 0.9)',
-          p: 1,
-          borderRadius: 1,
-          zIndex: 1000
+          bgcolor: 'rgba(255, 255, 255, 0.95)',
+          p: 2,
+          borderRadius: 2,
+          zIndex: 1000,
+          minWidth: 200,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
         }}
       >
-        <Typography variant="caption" display="block">
-          OpenStreetMap 
+        <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1, color: '#1976d2' }}>
+          📍 Thông Tin Giao Hàng
         </Typography>
-        <Typography variant="caption" display="block">
-           OSRM Routing API
+        
+        <Typography variant="caption" display="block" sx={{ mb: 0.5 }}>
+          🚁 Khoảng cách: {routeDistance > 0 ? `${routeDistance.toFixed(2)} km` : 'Đang tính...'}
         </Typography>
-        <Typography variant="caption" display="block">
-           Real-time GPS Simulation
+        
+        <Typography variant="caption" display="block" sx={{ mb: 0.5 }}>
+          ⏱️ Thời gian dự kiến: {estimatedTime > 0 ? `${estimatedTime} phút` : 'Đang tính...'}
+        </Typography>
+        
+        <Typography variant="caption" display="block" sx={{ mb: 1, color: '#4caf50' }}>
+          🎯 Trạng thái: Đang giao hàng
+        </Typography>
+        
+        <Typography variant="caption" display="block" sx={{ fontSize: '0.7rem', color: '#666' }}>
+          Powered by OpenStreetMap & OSRM
         </Typography>
       </Box>
     </Box>

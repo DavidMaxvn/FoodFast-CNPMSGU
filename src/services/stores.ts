@@ -20,6 +20,7 @@ export interface StoreViewModel {
   lat?: number;
   lng?: number;
   status: 'ACTIVE' | 'SUSPENDED';
+  isOpen?: boolean;
 }
 
 export async function fetchStores(openOnly = true): Promise<StoreViewModel[]> {
@@ -34,6 +35,7 @@ export async function fetchStores(openOnly = true): Promise<StoreViewModel[]> {
     lat: s.lat,
     lng: s.lng,
     status: s.status,
+    isOpen: s.status === 'ACTIVE', // Set isOpen based on status
   }));
 }
 
@@ -50,8 +52,10 @@ export async function fetchStoreById(id: string | number): Promise<StoreViewMode
       lat: s.lat,
       lng: s.lng,
       status: s.status,
+      isOpen: s.status === 'ACTIVE', // Set isOpen based on status
     };
-  } catch {
+  } catch (error) {
+    console.error('Error fetching store by ID:', error);
     return null;
   }
 }

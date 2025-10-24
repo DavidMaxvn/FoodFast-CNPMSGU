@@ -98,7 +98,7 @@ const Cart: React.FC = () => {
                     
                     <ListItemText
                       primary={item.name}
-                      secondary={`$${item.price.toFixed(2)}`}
+                      secondary={`${item.price.toLocaleString('vi-VN')}đ`}
                       primaryTypographyProps={{ fontWeight: 'medium' }}
                       secondaryTypographyProps={{ color: 'primary', fontWeight: 'bold' }}
                     />
@@ -130,7 +130,7 @@ const Cart: React.FC = () => {
                     </Box>
                     
                     <Typography variant="body1" sx={{ ml: 2, fontWeight: 'bold' }}>
-                      ${(item.price * item.quantity).toFixed(2)}
+                      {(item.price * item.quantity).toLocaleString('vi-VN')}đ
                     </Typography>
                   </ListItem>
                   <Divider variant="inset" component="li" />
@@ -158,12 +158,7 @@ const Cart: React.FC = () => {
             
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
               <Typography variant="body1">Subtotal</Typography>
-              <Typography variant="body1">${totalAmount.toFixed(2)}</Typography>
-            </Box>
-            
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-              <Typography variant="body1">Delivery Fee</Typography>
-              <Typography variant="body1">$2.00</Typography>
+              <Typography variant="body1">{totalAmount.toLocaleString('vi-VN')}đ</Typography>
             </Box>
             
             <Divider sx={{ my: 2 }} />
@@ -171,7 +166,7 @@ const Cart: React.FC = () => {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
               <Typography variant="h6">Total</Typography>
               <Typography variant="h6" color="primary">
-                ${(totalAmount + 2).toFixed(2)}
+                {totalAmount.toLocaleString('vi-VN')}đ
               </Typography>
             </Box>
             

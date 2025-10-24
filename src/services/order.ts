@@ -16,6 +16,7 @@ export interface OrderDTO {
   paymentMethod?: string;
   paymentStatus?: string;
   orderItems?: OrderItemDTO[];
+  estimatedDelivery?: string;
 }
 
 export interface OrderItemVM {

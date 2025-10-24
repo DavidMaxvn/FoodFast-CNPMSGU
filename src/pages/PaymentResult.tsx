@@ -20,10 +20,13 @@ const PaymentResult: React.FC = () => {
   // VNPay return parameters
   const vnpResponseCode = searchParams.get('vnp_ResponseCode');
   const vnpTxnRef = searchParams.get('vnp_TxnRef');
+  const vnpOrderInfo = searchParams.get('vnp_OrderInfo');
+
+  const isVNPayReturn = !!vnpResponseCode;
 
   useEffect(() => {
     // Handle VNPay return
-    if (vnpResponseCode) {
+    if (isVNPayReturn) {
       // Notify backend to process VNPay return (verify signature & update order/payment)
       try {
         const query: Record<string, string> = {};
@@ -35,7 +38,7 @@ const PaymentResult: React.FC = () => {
 
       if (vnpResponseCode === '00') {
         // Payment successful
-        const newOrderId = vnpTxnRef || `ORD_${Date.now()}`;
+        const newOrderId = vnpOrderInfo || vnpTxnRef || `ORD_${Date.now()}`;
         setOrderId(newOrderId);
         
         // Get pending order data and update it
@@ -54,7 +57,7 @@ const PaymentResult: React.FC = () => {
             paymentMethod: 'vnpay',
             paymentStatus: 'paid',
             orderDate: new Date().toISOString(),
-            totalAmount: parseFloat(searchParams.get('vnp_Amount') || '0') / 2300000 // Convert VND cents back to USD
+            totalAmount: parseFloat(searchParams.get('vnp_Amount') || '0') / 2300000 // Convert VND cents back to USD (approx)
           };
         }
         
@@ -65,7 +68,7 @@ const PaymentResult: React.FC = () => {
         dispatch(clearCart());
       } else {
         // Payment failed - keep pending order for retry
-        const newOrderId = vnpTxnRef || `ORD_${Date.now()}`;
+        const newOrderId = vnpOrderInfo || vnpTxnRef || `ORD_${Date.now()}`;
         setOrderId(newOrderId);
       }
     } else if (orderIdParam) {
@@ -74,10 +77,10 @@ const PaymentResult: React.FC = () => {
         dispatch(clearCart());
       }
     }
-  }, [vnpResponseCode, vnpTxnRef, orderIdParam, status, dispatch, searchParams]);
+  }, [isVNPayReturn, vnpResponseCode, vnpTxnRef, vnpOrderInfo, orderIdParam, status, dispatch, searchParams]);
 
   const getPaymentStatus = () => {
-    if (vnpResponseCode) {
+    if (isVNPayReturn) {
       return vnpResponseCode === '00' ? 'success' : 'failed';
     }
     return status;
@@ -85,6 +88,7 @@ const PaymentResult: React.FC = () => {
 
   const renderContent = () => {
     const paymentStatus = getPaymentStatus();
+    const methodLabel = isVNPayReturn ? 'Thanh toán qua VNPay' : (paymentMethod === 'vnpay' ? 'Thanh toán qua VNPay' : 'Thanh toán khi nhận hàng');
     
     switch (paymentStatus) {
       case 'success':
@@ -99,7 +103,7 @@ const PaymentResult: React.FC = () => {
               {orderId && ` Mã đơn hàng: ${orderId}`}
             </Typography>
             <Typography variant="body2" color="text.secondary" paragraph>
-              {paymentMethod === 'vnpay' ? 'Thanh toán qua VNPay' : 'Thanh toán khi nhận hàng'}
+              {methodLabel}
             </Typography>
             <Box sx={{ mt: 3 }}>
               <Button
@@ -130,7 +134,7 @@ const PaymentResult: React.FC = () => {
             <Typography variant="body1" paragraph>
               Không thể xử lý thanh toán của bạn. Vui lòng thử lại hoặc chọn phương thức thanh toán khác.
             </Typography>
-            {vnpResponseCode && (
+            {isVNPayReturn && (
               <Typography variant="body2" color="text.secondary" paragraph>
                 Mã lỗi VNPay: {vnpResponseCode}
               </Typography>

@@ -19,19 +19,18 @@ import {
 } from '@mui/material';
 import {
   RestaurantMenu,
-  TwoWheeler,
   CheckCircle,
   LocalShipping,
-  Kitchen
+  Kitchen,
+  FlightTakeoff
 } from '@mui/icons-material';
 import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
-import { getOrderById } from '../services/order';
 import TrackingMap from '../components/TrackingMap';
 
 // Order status steps
-const steps = ['Confirmed', 'Preparing', 'Ready for Delivery', 'On the Way', 'Delivered'];
+const steps = ['Confirmed', 'Preparing', 'Ready for Delivery', 'Drone Delivery', 'Delivered'];
 const statusToStep = {
   confirmed: 0,
   preparing: 1,
@@ -86,7 +85,7 @@ const OrderTracking: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadMockOrder = () => {
+    const loadOrderFromLocalStorage = () => {
       if (!id || !userId) {
         setLoading(false);
         setError('Please login to view your order.');
@@ -95,9 +94,56 @@ const OrderTracking: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const rawStr = localStorage.getItem('currentOrder');
+        let rawStr = localStorage.getItem('currentOrder');
+        console.log('Raw localStorage data:', rawStr);
+        
+        // If no data in localStorage, create test data
+        if (!rawStr) {
+          console.log('No currentOrder found, creating test data...');
+          const testOrder = {
+            id: 23,
+            status: 'CONFIRMED',
+            totalAmount: 150000,
+            paymentMethod: 'COD',
+            paymentStatus: 'PENDING',
+            address: {
+              line1: '456 Nguyen Hue',
+              ward: 'Ward 5',
+              district: 'District 1',
+              city: 'HCMC'
+            },
+            orderItems: [
+              {
+                id: 1,
+                quantity: 2,
+                unitPrice: 50000,
+                menuItem: {
+                  id: 1,
+                  name: 'Burger Deluxe',
+                  price: 50000,
+                  imageUrl: '/images/burger.jpg'
+                }
+              },
+              {
+                id: 2,
+                quantity: 1,
+                unitPrice: 50000,
+                menuItem: {
+                  id: 2,
+                  name: 'French Fries',
+                  price: 50000,
+                  imageUrl: '/images/fries.jpg'
+                }
+              }
+            ]
+          };
+          localStorage.setItem('currentOrder', JSON.stringify(testOrder));
+          rawStr = JSON.stringify(testOrder);
+        }
+        
         if (rawStr) {
           const raw = JSON.parse(rawStr);
+          console.log('Parsed order data:', raw);
           const statusRaw = (raw.status || '').toString().toUpperCase();
           const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
           
@@ -115,108 +161,48 @@ const OrderTracking: React.FC = () => {
             ].filter(Boolean).join(', ') || 'N/A';
           }
           
-          const items: OrderItemUI[] = Array.isArray(raw.items) ? raw.items.map((it: any) => ({
-            id: it.menuItemId || it.id || 'item',
-            name: it.name || 'Item',
+          // Handle orderItems from API response (OrderDTO format)
+          const rawItems = raw.orderItems || raw.items || [];
+          console.log('Raw items:', rawItems);
+          const items: OrderItemUI[] = Array.isArray(rawItems) ? rawItems.map((it: any) => ({
+            id: it.id || it.menuItemId || 'item',
+            name: it.menuItem?.name || it.name || 'Item',
             quantity: Number(it.quantity || 1),
-            price: Number(it.unitPrice ?? it.price ?? 0),
-            image: it.image,
+            price: Number(it.unitPrice ?? it.menuItem?.price ?? it.price ?? 0),
+            image: it.menuItem?.imageUrl || it.image,
           })) : [];
+          console.log('Processed items:', items);
+          
           const ui: OrderUI = {
             id: raw.id || id,
             status: uiStatus,
             items,
             total: Number(raw.totalAmount ?? raw.total ?? 0),
-            deliveryFee: 2.00,
+            deliveryFee: 0,
             address,
             estimatedDelivery: '30-45 minutes',
             paymentMethod: (raw.paymentMethod || '').toString(),
             paymentStatus: (raw.paymentStatus || '').toString(),
           };
+          
+          console.log('Final UI order:', ui);
           setOrder(ui);
           setActiveStep(statusToStep[uiStatus]);
           setIsArrivingSoon(statusToStep[uiStatus] === 3);
         } else {
-          // Fallback mock
-          const mockOrder: OrderUI = {
-            id: id || 'MOCK',
-            status: 'delivering',
-            items: [
-              { id: 'm1', name: 'Cheeseburger', quantity: 2, price: 5.9, image: 'https://source.unsplash.com/random/200x200/?burger' },
-              { id: 'm2', name: 'French Fries', quantity: 1, price: 2.9, image: 'https://source.unsplash.com/random/200x200/?fries' },
-            ],
-            total: 14.7,
-            deliveryFee: 2.0,
-            address: '123 Lê Lợi, Q1, TP.HCM',
-            estimatedDelivery: '30-45 minutes',
-            paymentMethod: 'VNPAY',
-            paymentStatus: 'PAID',
-          };
-          setOrder(mockOrder);
-          setActiveStep(statusToStep[mockOrder.status]);
-          setIsArrivingSoon(statusToStep[mockOrder.status] === 3);
+          console.log('No currentOrder found in localStorage');
+          setError('Không tìm thấy thông tin đơn hàng trong localStorage.');
         }
+      } catch (err) {
+        console.error('Error loading order from localStorage:', err);
+        setError('Lỗi khi đọc thông tin đơn hàng từ localStorage.');
       } finally {
         setLoading(false);
       }
     };
 
-    const loadFromBackend = async () => {
-      if (!id || !userId) {
-        setLoading(false);
-        setError('Please login to view your order.');
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      try {
-        const dto = await getOrderById(userId, Number(id));
-        const statusRaw = (dto.status || '').toUpperCase();
-        const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
-        
-        // Handle address properly - ensure it's converted to string
-        let address = 'N/A';
-        if (typeof dto.address === 'string') {
-          address = dto.address;
-        } else if (dto.address && typeof dto.address === 'object') {
-          const addr = dto.address;
-          address = [
-            addr.line1,
-            addr.ward,
-            addr.district,
-            addr.city
-          ].filter(Boolean).join(', ') || 'N/A';
-        }
-        
-        const items: OrderItemUI[] = Array.isArray(dto.orderItems) ? dto.orderItems.map((it: any) => ({
-          id: it.id || it.menuItemId || 'item',
-          name: it.menuItem?.name || 'Item',
-          quantity: Number(it.quantity || 1),
-          price: Number(it.unitPrice ?? it.menuItem?.price ?? 0),
-          image: it.menuItem?.imageUrl,
-        })) : [];
-        const ui: OrderUI = {
-          id: dto.id || id,
-          status: uiStatus,
-          items,
-          total: Number(dto.totalAmount ?? 0),
-          deliveryFee: 2.00,
-          address,
-          estimatedDelivery: '30-45 minutes',
-          paymentMethod: (dto.paymentMethod || '').toString(),
-          paymentStatus: (dto.paymentStatus || '').toString(),
-        };
-        setOrder(ui);
-        setActiveStep(statusToStep[uiStatus]);
-        setIsArrivingSoon(statusToStep[uiStatus] === 3);
-      } catch (e) {
-        // Fallback to local mock if backend not available
-        loadMockOrder();
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadFromBackend();
+    
+    loadOrderFromLocalStorage();
   }, [id, userId]);
 
   if (loading) {
@@ -281,7 +267,7 @@ const OrderTracking: React.FC = () => {
                         icon: index === 0 ? <RestaurantMenu /> :
                               index === 1 ? <Kitchen /> :
                               index === 2 ? <LocalShipping /> :
-                              index === 3 ? <TwoWheeler /> :
+                              index === 3 ? <FlightTakeoff /> :
                               <CheckCircle />
                       }}
                     >
@@ -301,8 +287,8 @@ const OrderTracking: React.FC = () => {
               </Typography>
             </Box>
             
-            <Box sx={{ height: 300, borderRadius: 1, overflow: 'hidden', mb: 2 }}>
-              <TrackingMap height={300} orderId={String(order.id)} />
+            <Box sx={{ height: 400, borderRadius: 2, overflow: 'hidden', mb: 2, boxShadow: 2 }}>
+              <TrackingMap height={400} orderId={String(order.id)} />
             </Box>
           </Paper>
           
@@ -367,12 +353,12 @@ const OrderTracking: React.FC = () => {
                 <ListItem>
                   <ListItemAvatar>
                     <Avatar sx={{ bgcolor: isArrivingSoon ? 'error.main' : 'primary.main' }}>
-                      <TwoWheeler />
+                      <FlightTakeoff />
                     </Avatar>
                   </ListItemAvatar>
                   <ListItemText
-                    primary={isArrivingSoon ? "Almost There!" : "On the Way"}
-                    secondary="Your order is on its way to your location"
+                    primary={isArrivingSoon ? "Drone Almost There!" : "Drone Delivery"}
+                    secondary="Your order is being delivered by drone to your location"
                   />
                   <Typography variant="body2" color="text.secondary">
                     {new Date(Date.now() - 1000 * 60 * 2).toLocaleTimeString()}
@@ -413,40 +399,71 @@ const OrderTracking: React.FC = () => {
               <Divider sx={{ my: 2 }} />
               
               <List sx={{ mb: 2 }}>
-                {order.items.map((item) => (
-                  <ListItem key={item.id} sx={{ py: 1, px: 0 }}>
-                    <ListItemAvatar>
-                      <Avatar src={item.image} alt={item.name} variant="rounded" />
-                    </ListItemAvatar>
+                {order.items.length === 0 ? (
+                  <ListItem>
                     <ListItemText
-                      primary={item.name}
-                      secondary={`Quantity: ${item.quantity}`}
+                      primary={
+                        <Typography variant="body1" color="text.secondary" sx={{ textAlign: 'center' }}>
+                          Không có món ăn nào trong đơn hàng này
+                        </Typography>
+                      }
                     />
-                    <Typography variant="body2">
-                      ${(item.price * item.quantity).toFixed(2)}
-                    </Typography>
                   </ListItem>
-                ))}
+                ) : (
+                  order.items.map((item) => (
+                    <ListItem key={item.id} sx={{ py: 1.5, px: 0, alignItems: 'flex-start' }}>
+                      <ListItemAvatar>
+                        <Avatar src={item.image} alt={item.name} variant="rounded" sx={{ width: 56, height: 56 }} />
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={
+                          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5 }}>
+                            {item.name}
+                          </Typography>
+                        }
+                        secondary={
+                          <Box>
+                            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                              Số lượng: {item.quantity}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Đơn giá: {item.price.toLocaleString('vi-VN')}đ
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                      <Box sx={{ textAlign: 'right', ml: 2 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                          {(item.price * item.quantity).toLocaleString('vi-VN')}đ
+                        </Typography>
+                      </Box>
+                    </ListItem>
+                  ))
+                )}
               </List>
               
               <Divider sx={{ my: 2 }} />
               
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography variant="body1">Subtotal</Typography>
-                <Typography variant="body1">${order.total.toFixed(2)}</Typography>
+                <Typography variant="body1">
+                  {order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0).toLocaleString('vi-VN')}đ
+                </Typography>
               </Box>
               
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="body1">Delivery Fee</Typography>
-                <Typography variant="body1">${order.deliveryFee.toFixed(2)}</Typography>
-              </Box>
+              {order.deliveryFee > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body1">Phí giao hàng</Typography>
+                  <Typography variant="body1">{order.deliveryFee.toLocaleString('vi-VN')}đ</Typography>
+                </Box>
+              )}
               
               <Divider sx={{ my: 2 }} />
               
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="h6">Total</Typography>
                 <Typography variant="h6" color="primary">
-                  ${(order.total + order.deliveryFee).toFixed(2)}
+                  {(order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0) + order.deliveryFee).toLocaleString('vi-VN')}đ
                 </Typography>
               </Box>
             </CardContent>
