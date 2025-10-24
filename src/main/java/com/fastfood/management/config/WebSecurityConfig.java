@@ -53,6 +53,9 @@ public class WebSecurityConfig {
         .requestMatchers(HttpMethod.PUT, "/menu/**").permitAll()
         .requestMatchers(HttpMethod.DELETE, "/menu/**").permitAll()
         .requestMatchers(HttpMethod.GET, "/public/**").permitAll()
+        // Public store browsing endpoints
+        .requestMatchers(HttpMethod.GET, "/stores").permitAll()
+        .requestMatchers(HttpMethod.GET, "/stores/**").permitAll()
         // Cho phép VNPay tạo payment và trả về (callback) không cần JWT
         .requestMatchers(HttpMethod.POST, "/payments/vnpay/**").permitAll()
         .requestMatchers(HttpMethod.GET, "/payments/vnpay/return").permitAll()
@@ -73,12 +76,14 @@ public class WebSecurityConfig {
   public CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration configuration = new CorsConfiguration();
 
-    configuration.setAllowedOrigins(Arrays.asList("*"));
+    // Allow specific origins instead of wildcard to support credentials
+    configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:8080"));
     configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(Arrays.asList("*"));
-     configuration.setExposedHeaders(Arrays.asList("x-auth-token"));
-     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-     source.registerCorsConfiguration("/**", configuration);
-     return source;
+    configuration.setAllowCredentials(true); // Enable credentials support
+    configuration.setExposedHeaders(Arrays.asList("x-auth-token"));
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/**", configuration);
+    return source;
    }
 }

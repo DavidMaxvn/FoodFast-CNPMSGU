@@ -126,12 +126,10 @@ public class OrderServiceImpl implements OrderService {
                     .provider("COD")
                     .amount(order.getTotalAmount())
                     .transactionReference("COD-" + order.getId() + "-" + UUID.randomUUID().toString().substring(0, 8))
-                    .status(Payment.PaymentStatus.COMPLETED)
+                    .status(Payment.PaymentStatus.PENDING)
                     .build();
             paymentRepository.save(payment);
-
-            order.setPaymentStatus(Order.PaymentStatus.PAID);
-            orderRepository.save(order);
+            // Không set order PaymentStatus = PAID tại thời điểm tạo đơn COD
         } else if (order.getPaymentMethod() == Order.PaymentMethod.VNPAY || order.getPaymentMethod() == Order.PaymentMethod.WALLET) {
             String provider = order.getPaymentMethod() == Order.PaymentMethod.VNPAY ? "VNPAY" : "WALLET";
             Payment payment = Payment.builder()
@@ -199,6 +197,7 @@ public class OrderServiceImpl implements OrderService {
              status == Order.OrderStatus.ASSIGNED ||
              status == Order.OrderStatus.OUT_FOR_DELIVERY ||
              status == Order.OrderStatus.DELIVERED)
+            && order.getPaymentMethod() != Order.PaymentMethod.COD
             && order.getPaymentStatus() != Order.PaymentStatus.PAID) {
             throw new IllegalStateException("Đơn chưa thanh toán (PAID), không thể chuyển trạng thái");
         }
@@ -222,6 +221,23 @@ public class OrderServiceImpl implements OrderService {
         // Tạo Delivery khi đơn chuyển sang READY_FOR_DELIVERY (nếu chưa có)
         if (status == Order.OrderStatus.READY_FOR_DELIVERY && order.getDelivery() == null) {
             insertDeliveryForOrder(order);
+        }
+        
+        // Tự động đánh dấu PAID cho COD khi đơn giao thành công
+        if (status == Order.OrderStatus.DELIVERED &&
+                order.getPaymentMethod() == Order.PaymentMethod.COD &&
+                order.getPaymentStatus() != Order.PaymentStatus.PAID) {
+            order.setPaymentStatus(Order.PaymentStatus.PAID);
+            orderRepository.save(order);
+            // Cập nhật Payment record sang COMPLETED
+            List<Payment> payments = paymentRepository.findByOrderId(order.getId());
+            payments.stream()
+                    .filter(p -> "COD".equalsIgnoreCase(p.getProvider()))
+                    .findFirst()
+                    .ifPresent(p -> {
+                        p.setStatus(Payment.PaymentStatus.COMPLETED);
+                        paymentRepository.save(p);
+                    });
         }
         
         // Bỏ gửi WebSocket trong phiên bản cơ bản

@@ -1,6 +1,6 @@
 package com.fastfood.management.controller;
 
-import com.fastfood.management.service.ImageStorage;
+import com.fastfood.management.service.CloudinaryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -17,10 +17,10 @@ import java.util.Map;
 public class FileController {
     private static final Logger log = LoggerFactory.getLogger(FileController.class);
     
-    private final ImageStorage storage;
+    private final CloudinaryService cloudinaryService;
 
-    public FileController(ImageStorage storage) {
-        this.storage = storage;
+    public FileController(CloudinaryService cloudinaryService) {
+        this.cloudinaryService = cloudinaryService;
     }
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -38,16 +38,20 @@ public class FileController {
                     .body(Map.of("error", "Only image files are allowed"));
             }
 
-            // Store file and get relative path
-            String relPath = storage.store(file, "products");
+            // Upload to Cloudinary and get URL
+            String cloudinaryUrl = cloudinaryService.uploadImage(file, "products");
             
-            log.info("File uploaded successfully: {}", relPath);
-            return ResponseEntity.ok(Map.of("path", relPath));
+            log.info("File uploaded successfully to Cloudinary: {}", cloudinaryUrl);
+            return ResponseEntity.ok(Map.of("path", cloudinaryUrl));
             
         } catch (IOException e) {
             log.error("File upload failed", e);
             return ResponseEntity.internalServerError()
                 .body(Map.of("error", "File upload failed: " + e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            log.error("Invalid file", e);
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -68,16 +72,20 @@ public class FileController {
                     .body(Map.of("error", "Only image files are allowed"));
             }
 
-            // Store file in specified folder
-            String relPath = storage.store(file, folder);
+            // Upload to Cloudinary in specified folder
+            String cloudinaryUrl = cloudinaryService.uploadImage(file, folder);
             
-            log.info("File uploaded to folder '{}': {}", folder, relPath);
-            return ResponseEntity.ok(Map.of("path", relPath));
+            log.info("File uploaded to Cloudinary folder '{}': {}", folder, cloudinaryUrl);
+            return ResponseEntity.ok(Map.of("path", cloudinaryUrl));
             
         } catch (IOException e) {
             log.error("File upload to folder '{}' failed", folder, e);
             return ResponseEntity.internalServerError()
                 .body(Map.of("error", "File upload failed: " + e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            log.error("Invalid file for folder '{}'", folder, e);
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", e.getMessage()));
         }
     }
 }
