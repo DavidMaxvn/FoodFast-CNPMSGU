@@ -20,6 +20,8 @@ const managerItems = [
   { label: 'Staff', path: '/merchant/staff' },
   { label: 'Reports', path: '/merchant/reports' },
   { label: 'Feedback', path: '/merchant/feedback' },
+  { label: 'Store Profile', path: '/merchant/profile' },
+  { label: 'Store Settings', path: '/merchant/settings' },
 ];
 const staffItems = [
   { label: 'Home', path: '/merchant' },

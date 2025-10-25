@@ -27,7 +27,9 @@ import {
   GpsFixed,
   AccountCircle,
   Logout,
-  ChevronLeft
+  ChevronLeft,
+  Storefront,
+  HowToReg
 } from '@mui/icons-material';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
@@ -68,6 +70,8 @@ const AdminLayout: React.FC = () => {
     { text: 'Kitchen Board', icon: <Kitchen />, path: '/admin/kitchen' },
     { text: 'Drone Console', icon: <FlightTakeoff />, path: '/admin/drones' },
     { text: 'Drone Tracking', icon: <GpsFixed />, path: '/admin/drone-tracking' },
+    { text: 'Stores', icon: <Storefront />, path: '/admin/stores' },
+    { text: 'Store Approvals', icon: <HowToReg />, path: '/admin/store-approvals' },
   ];
 
   return (
