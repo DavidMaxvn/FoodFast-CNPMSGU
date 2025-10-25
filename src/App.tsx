@@ -34,6 +34,8 @@ import StaffManagement from './pages/admin/StaffManagement';
 import KitchenBoard from './pages/admin/KitchenBoard';
 import DroneConsole from './pages/admin/DroneConsole';
 import DroneTracking from './pages/admin/DroneTracking';
+import AdminStores from './pages/admin/Stores';
+import StoreDetail from './pages/admin/StoreDetail';
 // Merchant/Kitchen Portal Pages
 import MerchantHome from './pages/merchant/MerchantHome';
 import MerchantDashboard from './pages/merchant/MerchantDashboard';
@@ -52,6 +54,8 @@ import RequireManager from './components/route/RequireManager';
 import RequireStaff from './components/route/RequireStaff';
 import StaffLayout from './components/layouts/StaffLayout';
 import AuthDebug from './components/debug/AuthDebug';
+import StoreProfile from './pages/merchant/StoreProfile';
+import StoreSettings from './pages/merchant/StoreSettings';
 
 const theme = createTheme({
   palette: {
@@ -124,6 +128,8 @@ function App() {
           <Route path="kitchen" element={<KitchenBoard />} />
           <Route path="drones" element={<DroneConsole />} />
           <Route path="drone-tracking" element={<DroneTracking />} />
+          <Route path="stores" element={<AdminStores />} />
+          <Route path="stores/:id" element={<StoreDetail />} />
         </Route>
 
         {/* Merchant/Kitchen Portal */}
@@ -148,6 +154,8 @@ function App() {
           <Route path="categories" element={<MerchantCategories />} />
           <Route path="staff" element={<MerchantStaff />} />
           <Route path="reports" element={<MerchantReports />} />
+          <Route path="profile" element={<StoreProfile />} />
+          <Route path="settings" element={<StoreSettings />} />
 
           <Route index element={<Navigate to="/merchant/dashboard" replace />} />
         </Route>

@@ -32,9 +32,6 @@ import {
   DeliveryDining,
   Favorite,
   FavoriteBorder,
-  Star,
-  LocalOffer,
-  TrendingUp,
   Store as StoreIcon,
   GridView,
   ViewList
@@ -378,39 +375,7 @@ const Stores: React.FC = () => {
       </Box>
 
       <Container maxWidth="xl">
-        {/* Statistics */}
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          <Grid item xs={12} sm={6} md={3}>
-            <Paper sx={{ p: 3, textAlign: 'center', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
-              <StoreIcon sx={{ fontSize: 40, mb: 1 }} />
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>{stores.length}</Typography>
-              <Typography variant="body2">Cửa hàng</Typography>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Paper sx={{ p: 3, textAlign: 'center', background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', color: 'white' }}>
-              <TrendingUp sx={{ fontSize: 40, mb: 1 }} />
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>{stores.filter(s => s.isOpen).length}</Typography>
-              <Typography variant="body2">Đang hoạt động</Typography>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Paper sx={{ p: 3, textAlign: 'center', background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', color: 'white' }}>
-              <Star sx={{ fontSize: 40, mb: 1 }} />
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                {(stores.reduce((sum, s) => sum + (s.rating || 0), 0) / stores.length).toFixed(1)}
-              </Typography>
-              <Typography variant="body2">Đánh giá trung bình</Typography>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Paper sx={{ p: 3, textAlign: 'center', background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', color: 'white' }}>
-              <LocalOffer sx={{ fontSize: 40, mb: 1 }} />
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>{stores.filter(s => s.discount).length}</Typography>
-              <Typography variant="body2">Ưu đãi hot</Typography>
-            </Paper>
-          </Grid>
-        </Grid>
+        {/* Statistics removed as requested */}
 
         {/* Search and Filter */}
         <Paper sx={{ p: 3, mb: 3 }}>
