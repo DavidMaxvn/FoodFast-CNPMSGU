@@ -38,11 +38,6 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(currentImage || null);
-
-  // Update preview when currentImage changes (for edit mode)
-  React.useEffect(() => {
-    setPreview(currentImage || null);
-  }, [currentImage]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -125,7 +120,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     fileInputRef.current?.click();
   };
 
-  const getImageUrl = (imagePath: string): string => {
+  const getImageUrl = (imagePath: string) => {
     if (!imagePath) return '';
     if (imagePath.startsWith('http')) return imagePath;
     if (imagePath.startsWith('/')) {

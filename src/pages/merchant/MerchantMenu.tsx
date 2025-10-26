@@ -32,7 +32,7 @@ const MerchantMenu: React.FC = () => {
         <TableHead>
           <TableRow>
             <TableCell>Tên món</TableCell>
-            <TableCell>Giá ($)</TableCell>
+            <TableCell>Giá (VND)</TableCell>
             <TableCell>Danh mục</TableCell>
             <TableCell align="right">Sửa</TableCell>
           </TableRow>
@@ -41,7 +41,7 @@ const MerchantMenu: React.FC = () => {
           {items.map((it) => (
             <TableRow key={it.id}>
               <TableCell>{it.name}</TableCell>
-              <TableCell>${it.price.toLocaleString('en-US')}</TableCell>
+              <TableCell>{it.price.toLocaleString('vi-VN')}</TableCell>
               <TableCell>{it.category}</TableCell>
               <TableCell align="right">
                 <Button size="small" onClick={() => navigate('/merchant/menu/new')}>Sửa</Button>

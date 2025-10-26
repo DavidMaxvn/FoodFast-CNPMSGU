@@ -34,8 +34,8 @@ const MerchantReports: React.FC = () => {
         </Grid>
       </Grid>
       <Paper sx={{ p: 2 }}>
-        <Typography variant="h6">Doanh thu: ${revenue.toLocaleString('en-US')}</Typography>
-        <Typography variant="h6">Số đơn: {orders.toLocaleString('en-US')}</Typography>
+        <Typography variant="h6">Doanh thu: {revenue.toLocaleString('vi-VN')} VND</Typography>
+        <Typography variant="h6">Số đơn: {orders.toLocaleString('vi-VN')}</Typography>
         <Typography color="text.secondary">Khoảng thời gian: {from} → {to}</Typography>
       </Paper>
     </Box>

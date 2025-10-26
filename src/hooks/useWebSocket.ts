@@ -18,7 +18,7 @@ export const useWebSocket = (config: WebSocketConfig) => {
     const client = new Client({
       webSocketFactory: () => new SockJS(config.url),
       connectHeaders: {},
-      debug: (str: string) => {
+      debug: (str) => {
         console.log('STOMP Debug:', str);
       },
       reconnectDelay: 5000,
@@ -32,8 +32,7 @@ export const useWebSocket = (config: WebSocketConfig) => {
       config.onConnect?.();
     };
 
-    // Use WebSocket close event to signal disconnect (cast to any for compatibility)
-    (client as any).onWebSocketClose = () => {
+    client.onDisconnect = () => {
       console.log('WebSocket disconnected');
       setIsConnected(false);
       config.onDisconnect?.();
@@ -53,8 +52,9 @@ export const useWebSocket = (config: WebSocketConfig) => {
     client.activate();
 
     return () => {
-      // Deactivate safely; no need to check non-typed properties
-      client.deactivate();
+      if (client.active) {
+        client.deactivate();
+      }
     };
   }, [config.url]);
 
@@ -74,14 +74,11 @@ export const useWebSocket = (config: WebSocketConfig) => {
   };
 
   const publish = (destination: string, body: any) => {
-    const c: any = clientRef.current as any;
-    if (c && isConnected) {
-      if (typeof c.publish === 'function') {
-        c.publish({ destination, body: JSON.stringify(body) });
-      } else if (typeof c.send === 'function') {
-        // Fallback for older stomp clients
-        c.send(destination, {}, JSON.stringify(body));
-      }
+    if (clientRef.current && isConnected) {
+      clientRef.current.publish({
+        destination,
+        body: JSON.stringify(body)
+      });
     }
   };
 
@@ -96,6 +93,6 @@ export const useWebSocket = (config: WebSocketConfig) => {
     subscribe,
     publish,
     unsubscribe,
-    client: clientRef.current,
+    client: clientRef.current
   };
 };

@@ -387,8 +387,8 @@ const OrderTracking: React.FC = () => {
         </Grid>
         
         <Grid item xs={12} md={4}>
-          <Card sx={{ mb: 3 }}>
-            <CardContent>
+          <Card sx={{ mb: 3, borderRadius: 2 }}>
+            <CardContent sx={{ p: 2.5 }}>
               <Typography variant="h6" gutterBottom>
                 Order Details
               </Typography>
@@ -398,7 +398,7 @@ const OrderTracking: React.FC = () => {
               
               <Divider sx={{ my: 2 }} />
               
-              <List sx={{ mb: 2 }}>
+              <List sx={{ mb: 2, '& .MuiListItem-root:not(:last-child)': { borderBottom: '1px solid', borderColor: 'divider' } }}>
                 {order.items.length === 0 ? (
                   <ListItem>
                     <ListItemText
@@ -411,19 +411,20 @@ const OrderTracking: React.FC = () => {
                   </ListItem>
                 ) : (
                   order.items.map((item) => (
-                    <ListItem key={item.id} sx={{ py: 1.5, px: 0, alignItems: 'flex-start' }}>
+                    <ListItem key={item.id} sx={{ py: 1.25, px: 0, alignItems: 'center' }}>
                       <ListItemAvatar>
-                        <Avatar src={item.image} alt={item.name} variant="rounded" sx={{ width: 56, height: 56 }} />
+                        <Avatar src={item.image} alt={item.name} variant="rounded" sx={{ width: 56, height: 56, borderRadius: 2 }} />
                       </ListItemAvatar>
                       <ListItemText
+                        sx={{ minWidth: 0, mr: 1 }}
                         primary={
-                          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5 }}>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.25 }} noWrap>
                             {item.name}
                           </Typography>
                         }
                         secondary={
                           <Box>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                            <Typography variant="body2" color="text.secondary">
                               Số lượng: {item.quantity}
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
@@ -432,8 +433,8 @@ const OrderTracking: React.FC = () => {
                           </Box>
                         }
                       />
-                      <Box sx={{ textAlign: 'right', ml: 2 }}>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                      <Box sx={{ textAlign: 'right', ml: 2, minWidth: 90, flexShrink: 0 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
                           {(item.price * item.quantity).toLocaleString('vi-VN')}đ
                         </Typography>
                       </Box>
@@ -462,24 +463,26 @@ const OrderTracking: React.FC = () => {
               
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="h6">Total</Typography>
-                <Typography variant="h6" color="primary">
+                <Typography variant="h6" color="primary" sx={{ fontWeight: 700 }}>
                   {(order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0) + order.deliveryFee).toLocaleString('vi-VN')}đ
                 </Typography>
               </Box>
             </CardContent>
           </Card>
           
-          <Card>
-            <CardContent>
+          <Card sx={{ borderRadius: 2 }}>
+            <CardContent sx={{ p: 2.5 }}>
               <Typography variant="h6" gutterBottom>
                 Payment Information
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Payment Method: {order.paymentMethod}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Payment Status: {order.paymentStatus || 'N/A'}
-              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <Chip label={`Method: ${order.paymentMethod}`} color="primary" variant="outlined" />
+                <Chip
+                  label={`Status: ${order.paymentStatus || 'N/A'}`}
+                  color={order.paymentStatus === 'PAID' ? 'success' : 'warning'}
+                  variant="outlined"
+                />
+              </Box>
             </CardContent>
           </Card>
         </Grid>
