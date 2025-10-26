@@ -411,9 +411,9 @@ const OrderTracking: React.FC = () => {
                   </ListItem>
                 ) : (
                   order.items.map((item) => (
-                    <ListItem key={item.id} sx={{ py: 1.25, px: 0, alignItems: 'center' }}>
+                    <ListItem key={item.id} sx={{ py: 1.5, px: 0, alignItems: 'flex-start' }}>
                       <ListItemAvatar>
-                        <Avatar src={item.image} alt={item.name} variant="rounded" sx={{ width: 56, height: 56, borderRadius: 2 }} />
+                        <Avatar src={item.image} alt={item.name} variant="rounded" sx={{ width: 56, height: 56 }} />
                       </ListItemAvatar>
                       <ListItemText
                         sx={{ minWidth: 0, mr: 1 }}
@@ -463,7 +463,7 @@ const OrderTracking: React.FC = () => {
               
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="h6">Total</Typography>
-                <Typography variant="h6" color="primary" sx={{ fontWeight: 700 }}>
+                <Typography variant="h6" color="primary">
                   {(order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0) + order.deliveryFee).toLocaleString('vi-VN')}đ
                 </Typography>
               </Box>

@@ -47,17 +47,24 @@ const PaymentResult: React.FC = () => {
         
         if (pendingOrderData) {
           orderData = JSON.parse(pendingOrderData);
-          orderData.status = 'confirmed';
-          orderData.paymentStatus = 'paid';
+          orderData.status = 'CONFIRMED';
+          orderData.paymentStatus = 'PAID';
           orderData.id = newOrderId;
+          
+          // Ensure orderItems and address are preserved from pendingOrder
+          if (!orderData.orderItems && orderData.items) {
+            orderData.orderItems = orderData.items;
+          }
         } else {
           orderData = {
             id: newOrderId,
-            status: 'confirmed',
-            paymentMethod: 'vnpay',
-            paymentStatus: 'paid',
+            status: 'CONFIRMED',
+            paymentMethod: 'VNPAY',
+            paymentStatus: 'PAID',
             orderDate: new Date().toISOString(),
-            totalAmount: parseFloat(searchParams.get('vnp_Amount') || '0') / 2300000 // Convert VND cents back to USD (approx)
+            totalAmount: parseFloat(searchParams.get('vnp_Amount') || '0') / 2300000, // Convert VND cents back to USD (approx)
+            orderItems: [],
+            address: null
           };
         }
         
@@ -74,6 +81,16 @@ const PaymentResult: React.FC = () => {
     } else if (orderIdParam) {
       setOrderId(orderIdParam);
       if (status === 'success') {
+        // For COD orders, ensure currentOrder has proper structure
+        const currentOrderData = localStorage.getItem('currentOrder');
+        if (currentOrderData) {
+          const orderData = JSON.parse(currentOrderData);
+          // Ensure orderItems field exists for OrderTracking compatibility
+          if (!orderData.orderItems && orderData.items) {
+            orderData.orderItems = orderData.items;
+          }
+          localStorage.setItem('currentOrder', JSON.stringify(orderData));
+        }
         dispatch(clearCart());
       }
     }

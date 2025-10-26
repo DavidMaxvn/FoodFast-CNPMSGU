@@ -313,7 +313,25 @@ const Checkout: React.FC = () => {
         window.location.href = vn.paymentUrl;
       } else {
         // COD: treat as success and go to result
-        localStorage.setItem('currentOrder', JSON.stringify(order));
+        const addressForOrder = (useSavedAddress === 'default' && defaultAddress)
+          ? { line1: defaultAddress.line1, ward: defaultAddress.ward || '', district: defaultAddress.district || '', city: defaultAddress.city }
+          : { line1: address.street, ward: '', district: address.district, city: address.city };
+        const orderWithDetails = {
+          ...order,
+          orderItems: items.map((item) => ({
+            id: Number(item.id),
+            quantity: item.quantity,
+            unitPrice: item.price,
+            menuItem: {
+              id: Number(item.id),
+              name: item.name,
+              price: item.price,
+              imageUrl: item.image
+            }
+          })),
+          address: addressForOrder
+        };
+        localStorage.setItem('currentOrder', JSON.stringify(orderWithDetails));
         navigate(`/payment/result?status=success&orderId=${order.id}&method=cod`);
       }
     } catch (error: any) {
