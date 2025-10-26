@@ -1,6 +1,6 @@
 package com.fastfood.management.service.impl;
 
-import com.fastfood.management.exception.ResourceNotFoundException;
+import com.fastfood.management.entity.Inventory;
 import com.fastfood.management.model.InventoryDTO;
 import com.fastfood.management.repository.InventoryRepository;
 import com.fastfood.management.service.api.InventoryService;
@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class InventoryServiceImpl implements InventoryService {
 
     private final InventoryRepository inventoryRepository;
@@ -20,21 +21,16 @@ public class InventoryServiceImpl implements InventoryService {
     @Override
     @Transactional(readOnly = true)
     public List<InventoryDTO> getInventoryByStore(Long storeId) {
-        return inventoryRepository.findByMenuItem_Store_Id(storeId).stream()
-                .map(InventoryDTO::fromEntity)
-                .collect(Collectors.toList());
+        List<Inventory> list = inventoryRepository.findByMenuItemStoreId(storeId);
+        return list.stream().map(InventoryDTO::fromEntity).collect(Collectors.toList());
     }
 
     @Override
-    @Transactional
     public InventoryDTO updateInventory(Long inventoryId, int quantity) {
-        if (quantity < 0) {
-            throw new IllegalArgumentException("Quantity cannot be negative.");
-        }
-
-        return inventoryRepository.findById(inventoryId).map(inventory -> {
-            inventory.setQuantity(quantity);
-            return InventoryDTO.fromEntity(inventoryRepository.save(inventory));
-        }).orElseThrow(() -> new ResourceNotFoundException("Inventory item not found with id: " + inventoryId));
+        Inventory inv = inventoryRepository.findById(inventoryId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy inventory với id: " + inventoryId));
+        inv.setQuantity(quantity);
+        Inventory saved = inventoryRepository.save(inv);
+        return InventoryDTO.fromEntity(saved);
     }
 }

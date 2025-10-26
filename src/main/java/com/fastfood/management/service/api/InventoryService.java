@@ -6,6 +6,5 @@ import java.util.List;
 
 public interface InventoryService {
     List<InventoryDTO> getInventoryByStore(Long storeId);
-
     InventoryDTO updateInventory(Long inventoryId, int quantity);
 }

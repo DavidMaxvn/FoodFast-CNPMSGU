@@ -9,8 +9,6 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-import com.fasterxml.jackson.annotation.JsonManagedReference;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -60,10 +58,9 @@ public class Order {
     private String note;
     
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
-    @JsonManagedReference
+    @Builder.Default
     private List<OrderItem> orderItems = new ArrayList<>();
-
-    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+    
     @OneToOne(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private Delivery delivery;
     
@@ -76,16 +73,8 @@ public class Order {
     private LocalDateTime updatedAt;
     
     public enum OrderStatus {
-        CREATED,           // Đặt hàng - Customer
-        CONFIRMED,         // Xác nhận đơn - Store Staff/Manager  
-        PREPARING,         // Đang chuẩn bị - Store Staff
-        READY_FOR_DELIVERY, // Sẵn sàng giao - Store Staff
-        ASSIGNED,          // Được gán Drone - System auto-assign
-        OUT_FOR_DELIVERY,  // Đang giao hàng - Drone → Server realtime
-        DELIVERED,         // Drone vào vùng 50m - Hệ thống tự động cập nhật
-        FAILED,            // Lỗi drone - Drone/Server
-        CANCELLED,         // Khách hủy trước READY - Customer
-        REJECTED           // Cửa hàng từ chối - Manager
+        CREATED, CONFIRMED, PREPARING,
+        READY_FOR_DELIVERY, ASSIGNED, OUT_FOR_DELIVERY, DELIVERED, REJECTED, CANCELLED, FAILED
     }
     
     public enum PaymentMethod {

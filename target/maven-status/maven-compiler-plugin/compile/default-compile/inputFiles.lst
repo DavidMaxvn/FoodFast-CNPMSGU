@@ -8,7 +8,6 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\api\InventoryService.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\DeliveryRepository.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\OrderItemRepository.java
-C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\DroneHealthResponse.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\request\GpsUpdateRequest.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\api\DroneSimulator.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\impl\DroneSimulatorImpl.java
