@@ -70,7 +70,9 @@ interface ExtendedStoreViewModel extends StoreViewModel {
 }
 
 // Mock data for store menu while backend is not ready
-const BACKEND_ORIGIN = (process.env.REACT_APP_API_BASE || 'http://localhost:8081').replace(/\/+$/, '');
+const BACKEND_ORIGIN = (process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080/api')
+  .replace(/\/+$/, '')
+  .replace(/\/api$/, '');
 
 const MOCK_STORE: ExtendedStoreViewModel = {
   id: 's1',

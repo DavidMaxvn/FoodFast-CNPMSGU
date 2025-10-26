@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -39,6 +39,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(currentImage || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync preview when parent passes a new currentImage (e.g., after reload)
+  useEffect(() => {
+    setPreview(currentImage || null);
+  }, [currentImage]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -89,6 +94,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       });
 
       if (response.data.path) {
+        // Set preview to final URL and notify parent
+        setPreview(response.data.path);
         onImageUploaded(response.data.path);
         setError(null);
       } else {
@@ -124,7 +131,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     if (!imagePath) return '';
     if (imagePath.startsWith('http')) return imagePath;
     if (imagePath.startsWith('/')) {
-      return `${api.defaults.baseURL?.replace(/\/+$/, '')}${imagePath}`;
+      const base = (api.defaults.baseURL || '').replace(/\/+$/, '');
+      const origin = base.replace(/\/api$/, '');
+      return `${origin}${imagePath}`;
     }
     return imagePath;
   };

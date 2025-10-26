@@ -18,49 +18,44 @@ export const useWebSocket = (config: WebSocketConfig) => {
     const client = new Client({
       webSocketFactory: () => new SockJS(config.url),
       connectHeaders: {},
-      debug: (str) => {
+      debug: (str: string) => {
         console.log('STOMP Debug:', str);
       },
       reconnectDelay: 5000,
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,
+      onConnect: () => {
+        console.log('WebSocket connected');
+        setIsConnected(true);
+        config.onConnect?.();
+      },
+      onWebSocketClose: () => {
+        console.log('WebSocket disconnected');
+        setIsConnected(false);
+        config.onDisconnect?.();
+      },
+      onStompError: (frame: unknown) => {
+        console.error('STOMP error:', frame);
+        config.onError?.(frame);
+      },
+      onWebSocketError: (error: Event) => {
+        console.error('WebSocket error:', error);
+        config.onError?.(error);
+      }
     });
-
-    client.onConnect = () => {
-      console.log('WebSocket connected');
-      setIsConnected(true);
-      config.onConnect?.();
-    };
-
-    client.onDisconnect = () => {
-      console.log('WebSocket disconnected');
-      setIsConnected(false);
-      config.onDisconnect?.();
-    };
-
-    client.onStompError = (frame) => {
-      console.error('STOMP error:', frame);
-      config.onError?.(frame);
-    };
-
-    client.onWebSocketError = (error) => {
-      console.error('WebSocket error:', error);
-      config.onError?.(error);
-    };
 
     clientRef.current = client;
     client.activate();
 
     return () => {
-      if (client.active) {
-        client.deactivate();
-      }
+      // Deactivate client on unmount
+      client.deactivate();
     };
   }, [config.url]);
 
   const subscribe = (destination: string, callback: (message: any) => void) => {
     if (clientRef.current && isConnected) {
-      return clientRef.current.subscribe(destination, (message) => {
+      return clientRef.current.subscribe(destination, (message: { body: string }) => {
         try {
           const data = JSON.parse(message.body);
           callback(data);
@@ -75,7 +70,7 @@ export const useWebSocket = (config: WebSocketConfig) => {
 
   const publish = (destination: string, body: any) => {
     if (clientRef.current && isConnected) {
-      clientRef.current.publish({
+      (clientRef.current as any).publish({
         destination,
         body: JSON.stringify(body)
       });

@@ -3,8 +3,8 @@ import { useMerchantSession, MerchantStore } from "../../store/merchantSession";
 import { useSelector } from "react-redux";
 import { RootState } from "../../store";
 import React, { useEffect, useState } from "react";
-import api from "../../services/api";
 import { CircularProgress, Box, Typography } from "@mui/material";
+import { fetchMyStores } from "../../services/merchantSession";
 
 const RequireManager = ({ children }: { children: JSX.Element }) => {
     const { currentStore, setSession } = useMerchantSession();
@@ -18,30 +18,20 @@ const RequireManager = ({ children }: { children: JSX.Element }) => {
             const fetchAndSetStore = async () => {
                 setLoading(true);
                 try {
-                    const response = await api.get<MerchantStore[]>('/me/stores');
-                    if (response.data && response.data.length > 0) {
-                        setSession(response.data[0]); // Automatically select the first store
-                        console.log('Store loaded:', response.data[0]);
+                    // Gọi API thật: /me/stores?userId=<id> và chuẩn hoá dữ liệu
+                    const list = await fetchMyStores(auth.user?.id);
+                    if (list && list.length > 0) {
+                        const s = list[0];
+                        const normalized: MerchantStore = { id: s.store_id, name: s.store_name, role: s.role };
+                        setSession(normalized); // Tự động chọn cửa hàng đầu tiên
+                        console.log('Store loaded:', normalized);
                     } else {
                         console.log('No stores found for user');
-                        setError("No stores assigned to your account.");
+                        setError("Tài khoản của bạn chưa được gán vào cửa hàng nào.");
                     }
                 } catch (err: any) {
                     console.error('Failed to fetch stores:', err);
-                    
-                    // If the endpoint doesn't exist (404) or other errors, create a mock store for merchant users
-                    if (auth.user && Array.isArray(auth.user.roles) && 
-                        (auth.user.roles.includes('MERCHANT') || auth.user.roles.includes('ROLE_MERCHANT'))) {
-                        console.log('Creating mock store for merchant user');
-                        const mockStore: MerchantStore = {
-                            id: 'store-1',
-                            name: 'Default Store',
-                            role: 'MANAGER'
-                        };
-                        setSession(mockStore);
-                    } else {
-                        setError("Failed to fetch store information. Please contact administrator.");
-                    }
+                    setError("Không thể tải thông tin cửa hàng. Vui lòng liên hệ quản trị viên.");
                 } finally {
                     setLoading(false);
                 }

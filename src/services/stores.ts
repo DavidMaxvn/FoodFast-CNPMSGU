@@ -31,7 +31,7 @@ export async function fetchStores(openOnly = true): Promise<StoreViewModel[]> {
     name: s.name,
     address: s.address || '',
     phone: s.phone || '',
-    image: s.imageUrl ? (s.imageUrl.startsWith('/') ? `${(api.defaults.baseURL || '').replace(/\/+$/, '')}${s.imageUrl}` : s.imageUrl) : '',
+    image: s.imageUrl ? (s.imageUrl.startsWith('/') ? `${(api.defaults.baseURL || '').replace(/\/+$/, '').replace(/\/api$/, '')}${s.imageUrl}` : s.imageUrl) : '',
     lat: s.lat,
     lng: s.lng,
     status: s.status,
@@ -48,7 +48,7 @@ export async function fetchStoreById(id: string | number): Promise<StoreViewMode
       name: s.name,
       address: s.address || '',
       phone: s.phone || '',
-      image: s.imageUrl ? (s.imageUrl.startsWith('/') ? `${(api.defaults.baseURL || '').replace(/\/+$/, '')}${s.imageUrl}` : s.imageUrl) : '',
+      image: s.imageUrl ? (s.imageUrl.startsWith('/') ? `${(api.defaults.baseURL || '').replace(/\/+$/, '').replace(/\/api$/, '')}${s.imageUrl}` : s.imageUrl) : '',
       lat: s.lat,
       lng: s.lng,
       status: s.status,
@@ -58,6 +58,25 @@ export async function fetchStoreById(id: string | number): Promise<StoreViewMode
     console.error('Error fetching store by ID:', error);
     return null;
   }
+}
+
+export async function updateStoreImage(id: string | number, imageUrl: string): Promise<void> {
+  await api.put(`/stores/${id}/image`, { imageUrl });
+}
+
+export interface UpdateStorePayload {
+  name?: string;
+  address?: string;
+  phone?: string;
+  imageUrl?: string;
+  lat?: number;
+  lng?: number;
+  status?: 'ACTIVE' | 'SUSPENDED';
+}
+
+export async function updateStoreDetails(id: string | number, payload: UpdateStorePayload): Promise<StoreDTO> {
+  const res = await api.put(`/stores/${id}`, payload);
+  return res.data;
 }
 
 export interface MenuItemDTO {
@@ -88,7 +107,7 @@ export async function fetchStoreMenu(storeId: string | number, page = 0, size = 
     name: i.name,
     description: i.description || '',
     price: Number(i.price),
-    image: i.imageUrl ? (i.imageUrl.startsWith('/') ? `${(api.defaults.baseURL || '').replace(/\/+$/, '')}${i.imageUrl}` : i.imageUrl) : '',
+    image: i.imageUrl ? (i.imageUrl.startsWith('/') ? `${(api.defaults.baseURL || '').replace(/\/+$/, '').replace(/\/api$/, '')}${i.imageUrl}` : i.imageUrl) : '',
     category: i.category?.name || 'Other',
     available: !!i.available,
   }));
