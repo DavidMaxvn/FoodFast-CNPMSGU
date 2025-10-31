@@ -7,7 +7,7 @@ import com.fastfood.management.repository.*;
 import java.util.UUID;
 import com.fastfood.management.service.api.OrderService;
 import jakarta.persistence.EntityNotFoundException;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -120,17 +120,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private void insertPaymentForOrder(Order order) {
-        if (order.getPaymentMethod() == Order.PaymentMethod.COD) {
-            Payment payment = Payment.builder()
-                    .order(order)
-                    .provider("COD")
-                    .amount(order.getTotalAmount())
-                    .transactionReference("COD-" + order.getId() + "-" + UUID.randomUUID().toString().substring(0, 8))
-                    .status(Payment.PaymentStatus.PENDING)
-                    .build();
-            paymentRepository.save(payment);
-            // Không set order PaymentStatus = PAID tại thời điểm tạo đơn COD
-        } else if (order.getPaymentMethod() == Order.PaymentMethod.VNPAY || order.getPaymentMethod() == Order.PaymentMethod.WALLET) {
+        if (order.getPaymentMethod() == Order.PaymentMethod.VNPAY || order.getPaymentMethod() == Order.PaymentMethod.WALLET) {
             String provider = order.getPaymentMethod() == Order.PaymentMethod.VNPAY ? "VNPAY" : "WALLET";
             Payment payment = Payment.builder()
                     .order(order)
@@ -163,10 +153,11 @@ public class OrderServiceImpl implements OrderService {
         
         Order.OrderStatus oldStatus = order.getStatus();
 
-        // RBAC: Chỉ MERCHANT hoặc ADMIN được phép thao tác các trạng thái vận hành bếp/giao hàng
+        // RBAC: Cho phép MERCHANT, STAFF hoặc ADMIN thao tác các trạng thái vận hành bếp/giao hàng
         boolean isAdmin = hasSystemRole(currentUser, Role.ROLE_ADMIN);
         boolean isMerchant = hasSystemRole(currentUser, Role.ROLE_MERCHANT);
-        boolean isOwner = order.getCustomer() != null && order.getCustomer().getId().equals(currentUser.getId());
+        boolean isStaff = hasSystemRole(currentUser, Role.ROLE_STAFF);
+        boolean isOwner = currentUser != null && order.getCustomer() != null && order.getCustomer().getId().equals(currentUser.getId());
 
         switch (status) {
             case CONFIRMED:
@@ -176,7 +167,7 @@ public class OrderServiceImpl implements OrderService {
             case OUT_FOR_DELIVERY:
             case DELIVERED:
             case REJECTED:
-                if (!(isAdmin || isMerchant)) {
+                if (!(isAdmin || isMerchant || isStaff)) {
                     throw new IllegalStateException("Chỉ nhân viên cửa hàng hoặc admin mới được cập nhật trạng thái này");
                 }
                 break;
@@ -197,7 +188,6 @@ public class OrderServiceImpl implements OrderService {
              status == Order.OrderStatus.ASSIGNED ||
              status == Order.OrderStatus.OUT_FOR_DELIVERY ||
              status == Order.OrderStatus.DELIVERED)
-            && order.getPaymentMethod() != Order.PaymentMethod.COD
             && order.getPaymentStatus() != Order.PaymentStatus.PAID) {
             throw new IllegalStateException("Đơn chưa thanh toán (PAID), không thể chuyển trạng thái");
         }
@@ -223,22 +213,7 @@ public class OrderServiceImpl implements OrderService {
             insertDeliveryForOrder(order);
         }
         
-        // Tự động đánh dấu PAID cho COD khi đơn giao thành công
-        if (status == Order.OrderStatus.DELIVERED &&
-                order.getPaymentMethod() == Order.PaymentMethod.COD &&
-                order.getPaymentStatus() != Order.PaymentStatus.PAID) {
-            order.setPaymentStatus(Order.PaymentStatus.PAID);
-            orderRepository.save(order);
-            // Cập nhật Payment record sang COMPLETED
-            List<Payment> payments = paymentRepository.findByOrderId(order.getId());
-            payments.stream()
-                    .filter(p -> "COD".equalsIgnoreCase(p.getProvider()))
-                    .findFirst()
-                    .ifPresent(p -> {
-                        p.setStatus(Payment.PaymentStatus.COMPLETED);
-                        paymentRepository.save(p);
-                    });
-        }
+
         
         // Bỏ gửi WebSocket trong phiên bản cơ bản
         // webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
@@ -253,7 +228,7 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new EntityNotFoundException("Order not found"));
         
         // Check if user has access to this order
-        if (!order.getCustomer().getId().equals(currentUser.getId())) {
+        if (currentUser == null || order.getCustomer() == null || !order.getCustomer().getId().equals(currentUser.getId())) {
             throw new IllegalStateException("Access denied: Order does not belong to current user");
         }
         
@@ -282,21 +257,40 @@ public class OrderServiceImpl implements OrderService {
     }
     
     @Override
+    @Transactional(readOnly = true)
     public Order getOrderById(Long id, User currentUser) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found"));
         
-        // Check if user has access to this order
-        if (!order.getCustomer().getId().equals(currentUser.getId())) {
-            throw new IllegalStateException("Access denied: Order does not belong to current user");
-        }
+        // Allow owner or system roles to view order
+        boolean isOwner = currentUser != null && order.getCustomer() != null && order.getCustomer().getId().equals(currentUser.getId());
+        boolean hasAdmin = hasSystemRole(currentUser, "ADMIN") || hasSystemRole(currentUser, "ROLE_ADMIN");
+        boolean hasMerchant = hasSystemRole(currentUser, "MERCHANT") || hasSystemRole(currentUser, "ROLE_MERCHANT");
+        boolean hasStaff = hasSystemRole(currentUser, "STAFF") || hasSystemRole(currentUser, "ROLE_STAFF");
+        boolean hasManager = hasSystemRole(currentUser, "MANAGER") || hasSystemRole(currentUser, "ROLE_MANAGER");
         
+        if (!(isOwner || hasAdmin || hasMerchant || hasStaff || hasManager)) {
+            throw new AccessDeniedException("Access denied: not permitted to view this order");
+        }
+
+        // Initialize lazy collections for serialization
+        if (order.getOrderItems() != null) {
+            order.getOrderItems().size();
+        }
         return order;
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<Order> listMyOrders(User currentUser) {
-        return orderRepository.findByCustomerOrderByCreatedAtDesc(currentUser);
+        List<Order> orders = orderRepository.findByCustomerOrderByCreatedAtDesc(currentUser);
+        // Initialize lazy collections to avoid LazyInitializationException during JSON serialization
+        for (Order order : orders) {
+            if (order.getOrderItems() != null) {
+                order.getOrderItems().size();
+            }
+        }
+        return orders;
     }
 
     @Override

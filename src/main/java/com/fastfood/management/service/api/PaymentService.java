@@ -15,7 +15,4 @@ public interface PaymentService {
 
     // Lấy Payment theo orderId
     PaymentResponse getPaymentByOrderId(Long orderId);
-
-    // Thanh toán COD cơ bản
-    PaymentResponse createCODPayment(Long orderId);
 }
