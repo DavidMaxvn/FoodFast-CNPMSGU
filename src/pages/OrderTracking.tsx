@@ -15,19 +15,22 @@ import {
   ListItemText,
   ListItemAvatar,
   Avatar,
-  Chip
+  Chip,
+  SvgIcon
 } from '@mui/material';
 import {
   RestaurantMenu,
   CheckCircle,
   LocalShipping,
   Kitchen,
-  FlightTakeoff
+  FlightTakeoff,
+  TravelExplore
 } from '@mui/icons-material';
 import { useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import TrackingMap from '../components/TrackingMap';
+import api from '../services/api';
 
 // Order status steps
 const steps = ['Confirmed', 'Preparing', 'Ready for Delivery', 'Drone Delivery', 'Delivered'];
@@ -45,6 +48,7 @@ const backendToUIStatus: Record<string, StatusKey> = {
   CONFIRMED: 'confirmed',
   PREPARING: 'preparing',
   READY_FOR_DELIVERY: 'ready',
+  ASSIGNED: 'ready',
   OUT_FOR_DELIVERY: 'delivering',
   DELIVERED: 'delivered',
   // Fallbacks for early states
@@ -52,6 +56,18 @@ const backendToUIStatus: Record<string, StatusKey> = {
   PENDING_PAYMENT: 'confirmed',
   PAID: 'confirmed',
 };
+
+// Simple custom drone icon using SVG
+const DroneIcon = (props: any) => (
+  <SvgIcon {...props} viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="2" fill="currentColor" />
+    <circle cx="4.5" cy="4.5" r="1.5" stroke="currentColor" fill="none" strokeWidth="1.5" />
+    <circle cx="19.5" cy="4.5" r="1.5" stroke="currentColor" fill="none" strokeWidth="1.5" />
+    <circle cx="4.5" cy="19.5" r="1.5" stroke="currentColor" fill="none" strokeWidth="1.5" />
+    <circle cx="19.5" cy="19.5" r="1.5" stroke="currentColor" fill="none" strokeWidth="1.5" />
+    <path d="M6 6 L10 10 M18 6 L14 10 M6 18 L10 14 M18 18 L14 14" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+  </SvgIcon>
+);
 
 interface OrderItemUI {
   id: string | number;
@@ -85,94 +101,121 @@ const OrderTracking: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadOrderFromLocalStorage = () => {
-      if (!id || !userId) {
+    const loadOrderFromAPI = async (orderId: string) => {
+      try {
+        console.log('Loading order from API, orderId:', orderId);
+        const response = await api.get(`/orders/${orderId}`);
+        const raw = response.data;
+        console.log('API response:', raw);
+        
+        const statusRaw = (raw.status || '').toString().toUpperCase();
+        const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
+        
+        // Handle address properly - it might be a string or object
+        let address = 'N/A';
+        if (typeof raw.address === 'string') {
+          address = raw.address;
+        } else if (raw.address && typeof raw.address === 'object') {
+          const addr = raw.address;
+          address = [
+            addr.line1,
+            addr.ward,
+            addr.district,
+            addr.city
+          ].filter(Boolean).join(', ') || 'N/A';
+        }
+        
+        // Handle orderItems from API response
+        const rawItems = raw.orderItems || raw.items || [];
+        console.log('Raw items from API:', rawItems);
+        const items: OrderItemUI[] = Array.isArray(rawItems) ? rawItems.map((it: any) => ({
+          id: it.id || it.menuItemId || 'item',
+          name: it.menuItem?.name || it.name || 'Item',
+          quantity: Number(it.quantity || 1),
+          price: Number(it.unitPrice ?? it.menuItem?.price ?? it.price ?? 0),
+          image: it.menuItem?.imageUrl || it.image,
+        })) : [];
+        console.log('Processed items from API:', items);
+        
+        const ui: OrderUI = {
+          id: raw.id || orderId,
+          status: uiStatus,
+          items,
+          total: Number(raw.totalAmount ?? raw.total ?? 0),
+          deliveryFee: 0,
+          address,
+          estimatedDelivery: '30-45 minutes',
+          paymentMethod: (raw.paymentMethod || '').toString(),
+          paymentStatus: (raw.paymentStatus || '').toString(),
+        };
+        
+        console.log('Final UI order from API:', ui);
+        setOrder(ui);
+        setActiveStep(statusToStep[uiStatus]);
+        setIsArrivingSoon(statusToStep[uiStatus] === 3);
+        
+        // Save to localStorage for future use
+        localStorage.setItem('currentOrder', JSON.stringify(raw));
+        
+      } catch (err) {
+        console.error('Error loading order from API:', err);
+        setError('Không thể tải thông tin đơn hàng từ server.');
+      }
+    };
+
+    const loadOrderFromLocalStorage = async () => {
+      if (!id) {
         setLoading(false);
-        setError('Please login to view your order.');
+        setError('Thiếu mã đơn hàng để theo dõi.');
         return;
       }
       setLoading(true);
       setError(null);
       try {
-        let rawStr = localStorage.getItem('currentOrder');
+        const rawStr = localStorage.getItem('currentOrder');
         console.log('Raw localStorage data:', rawStr);
-        
-        // If no data in localStorage, create test data
-        if (!rawStr) {
-          console.log('No currentOrder found, creating test data...');
-          const testOrder = {
-            id: 23,
-            status: 'CONFIRMED',
-            totalAmount: 150000,
-            paymentMethod: 'COD',
-            paymentStatus: 'PENDING',
-            address: {
-              line1: '456 Nguyen Hue',
-              ward: 'Ward 5',
-              district: 'District 1',
-              city: 'HCMC'
-            },
-            orderItems: [
-              {
-                id: 1,
-                quantity: 2,
-                unitPrice: 50000,
-                menuItem: {
-                  id: 1,
-                  name: 'Burger Deluxe',
-                  price: 50000,
-                  imageUrl: '/images/burger.jpg'
-                }
-              },
-              {
-                id: 2,
-                quantity: 1,
-                unitPrice: 50000,
-                menuItem: {
-                  id: 2,
-                  name: 'French Fries',
-                  price: 50000,
-                  imageUrl: '/images/fries.jpg'
-                }
-              }
-            ]
-          };
-          localStorage.setItem('currentOrder', JSON.stringify(testOrder));
-          rawStr = JSON.stringify(testOrder);
-        }
-        
+
         if (rawStr) {
           const raw = JSON.parse(rawStr);
           console.log('Parsed order data:', raw);
+
+          // Nếu ID trong localStorage không khớp, thử gọi API nếu có đăng nhập
+          if (raw.id && raw.id.toString() !== id) {
+            console.log('Order ID mismatch, loading from API if authenticated...');
+            if (userId) {
+              await loadOrderFromAPI(id);
+            } else {
+              setError('Không tìm thấy dữ liệu đơn hàng cho mã này. Vui lòng đăng nhập để tải từ server.');
+            }
+            return;
+          }
+
           const statusRaw = (raw.status || '').toString().toUpperCase();
           const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
-          
-          // Handle address properly - it might be a string or object
+
+          // Xử lý địa chỉ: có thể là string hoặc object
           let address = 'N/A';
           if (typeof raw.address === 'string') {
             address = raw.address;
           } else if (raw.address && typeof raw.address === 'object') {
             const addr = raw.address;
-            address = [
-              addr.line1,
-              addr.ward,
-              addr.district,
-              addr.city
-            ].filter(Boolean).join(', ') || 'N/A';
+            address = [addr.line1, addr.ward, addr.district, addr.city].filter(Boolean).join(', ') || 'N/A';
           }
-          
-          // Handle orderItems from API response (OrderDTO format)
+
+          // Xử lý items từ localStorage
           const rawItems = raw.orderItems || raw.items || [];
           console.log('Raw items:', rawItems);
-          const items: OrderItemUI[] = Array.isArray(rawItems) ? rawItems.map((it: any) => ({
-            id: it.id || it.menuItemId || 'item',
-            name: it.menuItem?.name || it.name || 'Item',
-            quantity: Number(it.quantity || 1),
-            price: Number(it.unitPrice ?? it.menuItem?.price ?? it.price ?? 0),
-            image: it.menuItem?.imageUrl || it.image,
-          })) : [];
+          const items: OrderItemUI[] = Array.isArray(rawItems)
+            ? rawItems.map((it: any) => ({
+                id: it.id || it.menuItemId || 'item',
+                name: it.menuItem?.name || it.name || it.nameSnapshot || 'Item',
+                quantity: Number(it.quantity || 1),
+                price: Number(it.unitPrice ?? it.menuItem?.price ?? it.price ?? 0),
+                image: it.menuItem?.imageUrl || it.image || it.imageSnapshot,
+              }))
+            : [];
           console.log('Processed items:', items);
-          
+
           const ui: OrderUI = {
             id: raw.id || id,
             status: uiStatus,
@@ -184,24 +227,52 @@ const OrderTracking: React.FC = () => {
             paymentMethod: (raw.paymentMethod || '').toString(),
             paymentStatus: (raw.paymentStatus || '').toString(),
           };
-          
+
           console.log('Final UI order:', ui);
           setOrder(ui);
           setActiveStep(statusToStep[uiStatus]);
           setIsArrivingSoon(statusToStep[uiStatus] === 3);
+
+          // Nếu không có item trong localStorage, thử lấy từ API để làm giàu dữ liệu
+          if (items.length === 0) {
+            console.log('No items found in localStorage order, trying API to enrich...');
+            if (userId) {
+              try {
+                await loadOrderFromAPI(id);
+              } catch (apiErr) {
+                console.warn('API enrichment failed, keep localStorage data:', apiErr);
+              }
+            }
+          }
         } else {
-          console.log('No currentOrder found in localStorage');
-          setError('Không tìm thấy thông tin đơn hàng trong localStorage.');
+          // Không có dữ liệu localStorage: nếu đã đăng nhập, gọi API; nếu không, báo lỗi
+          console.log('No currentOrder found in localStorage.');
+          if (userId) {
+            console.log('Authenticated, trying API...');
+            await loadOrderFromAPI(id);
+          } else {
+            setError('Không tìm thấy dữ liệu đơn hàng. Vui lòng đăng nhập để tải từ server.');
+          }
         }
       } catch (err) {
         console.error('Error loading order from localStorage:', err);
-        setError('Lỗi khi đọc thông tin đơn hàng từ localStorage.');
+        // Nếu localStorage lỗi: thử API khi có đăng nhập
+        if (userId) {
+          console.log('localStorage failed, trying API as fallback...');
+          try {
+            await loadOrderFromAPI(id);
+          } catch (apiErr) {
+            console.error('API fallback also failed:', apiErr);
+            setError('Không thể tải thông tin đơn hàng.');
+          }
+        } else {
+          setError('Không thể đọc dữ liệu đơn hàng từ trình duyệt. Vui lòng đăng nhập.');
+        }
       } finally {
         setLoading(false);
       }
     };
 
-    
     loadOrderFromLocalStorage();
   }, [id, userId]);
 
@@ -266,8 +337,8 @@ const OrderTracking: React.FC = () => {
                       StepIconProps={{
                         icon: index === 0 ? <RestaurantMenu /> :
                               index === 1 ? <Kitchen /> :
-                              index === 2 ? <LocalShipping /> :
-                              index === 3 ? <FlightTakeoff /> :
+                              index === 2 ? <TravelExplore /> :
+                              index === 3 ? <DroneIcon /> :
                               <CheckCircle />
                       }}
                     >
@@ -336,12 +407,12 @@ const OrderTracking: React.FC = () => {
                 <ListItem>
                   <ListItemAvatar>
                     <Avatar sx={{ bgcolor: 'primary.main' }}>
-                      <LocalShipping />
+                      <TravelExplore />
                     </Avatar>
                   </ListItemAvatar>
                   <ListItemText
-                    primary="Ready for Delivery"
-                    secondary="Your order is packed and ready for delivery"
+                    primary="Đang tìm drone để giao"
+                    secondary="Hệ thống đang chọn drone phù hợp cho đơn hàng của bạn"
                   />
                   <Typography variant="body2" color="text.secondary">
                     {new Date(Date.now() - 1000 * 60 * 5).toLocaleTimeString()}
@@ -353,12 +424,12 @@ const OrderTracking: React.FC = () => {
                 <ListItem>
                   <ListItemAvatar>
                     <Avatar sx={{ bgcolor: isArrivingSoon ? 'error.main' : 'primary.main' }}>
-                      <FlightTakeoff />
+                      <DroneIcon />
                     </Avatar>
                   </ListItemAvatar>
                   <ListItemText
-                    primary={isArrivingSoon ? "Drone Almost There!" : "Drone Delivery"}
-                    secondary="Your order is being delivered by drone to your location"
+                    primary={isArrivingSoon ? "Drone sắp tới!" : "Drone đang giao hàng"}
+                    secondary="Đơn hàng đang được drone vận chuyển tới vị trí của bạn"
                   />
                   <Typography variant="body2" color="text.secondary">
                     {new Date(Date.now() - 1000 * 60 * 2).toLocaleTimeString()}
@@ -448,7 +519,10 @@ const OrderTracking: React.FC = () => {
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography variant="body1">Subtotal</Typography>
                 <Typography variant="body1">
-                  {order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0).toLocaleString('vi-VN')}đ
+                  {(order.items.length > 0
+                    ? order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+                    : order.total
+                  ).toLocaleString('vi-VN')}đ
                 </Typography>
               </Box>
               
@@ -464,7 +538,10 @@ const OrderTracking: React.FC = () => {
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="h6">Total</Typography>
                 <Typography variant="h6" color="primary" sx={{ fontWeight: 700 }}>
-                  {(order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0) + order.deliveryFee).toLocaleString('vi-VN')}đ
+                  {((order.items.length > 0
+                    ? order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+                    : order.total
+                  ) + order.deliveryFee).toLocaleString('vi-VN')}đ
                 </Typography>
               </Box>
             </CardContent>

@@ -89,7 +89,9 @@ const ItemDetail: React.FC = () => {
         name: item.name,
         price: item.price,
         quantity: quantity,
-        image: item.images[0]
+        image: item.images[0],
+        storeId: 'mock',
+        storeName: 'Demo Store'
       }));
     }
   };

@@ -7,6 +7,8 @@ interface MenuItem {
   price: number;
   image: string;
   category: string;
+  store?: string;
+  storeId?: string;
   available: boolean;
 }
 

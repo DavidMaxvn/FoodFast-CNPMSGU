@@ -96,7 +96,9 @@ const Home: React.FC = () => {
       name: item.name,
       price: item.price,
       quantity: 1,
-      image: item.image
+      image: item.image,
+      storeId: item.storeId,
+      storeName: item.store || 'Unknown'
     }));
   };
 

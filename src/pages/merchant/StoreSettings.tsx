@@ -5,8 +5,7 @@ import { useMerchantSession } from '../../store/merchantSession';
 const StoreSettings: React.FC = () => {
   const { currentStore } = useMerchantSession();
 
-  const [enabledCOD, setEnabledCOD] = useState(true);
-  const [enabledVNPay, setEnabledVNPay] = useState(false);
+  const [enabledVNPay, setEnabledVNPay] = useState(true);
   const [openHours, setOpenHours] = useState({ open: '08:00', close: '22:00' });
   const [deliveryRadius, setDeliveryRadius] = useState<number>(3);
 
@@ -37,7 +36,6 @@ const StoreSettings: React.FC = () => {
         <CardHeader title="Phương thức thanh toán" subheader="Bật/tắt các phương thức thanh toán hỗ trợ" />
         <CardContent>
           <Stack direction="row" spacing={3}>
-            <FormControlLabel control={<Switch checked={enabledCOD} onChange={(e) => setEnabledCOD(e.target.checked)} />} label="COD (Thanh toán khi nhận hàng)" />
             <FormControlLabel control={<Switch checked={enabledVNPay} onChange={(e) => setEnabledVNPay(e.target.checked)} />} label="VNPay" />
           </Stack>
         </CardContent>

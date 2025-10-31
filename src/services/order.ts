@@ -12,11 +12,33 @@ export interface OrderDTO {
   status: 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
   totalAmount?: number;
   createdAt?: string;
-  address?: { line1: string; ward?: string; district?: string; city?: string };
+  address?: { line1: string; ward?: string; district?: string; city: string };
   paymentMethod?: string;
   paymentStatus?: string;
   orderItems?: OrderItemDTO[];
   estimatedDelivery?: string;
+}
+
+// Backend OrderResponse for admin/merchant listing
+export interface OrderResponseItem {
+  id: number;
+  menuItemId?: number;
+  menuItemName?: string;
+  quantity: number;
+  unitPrice?: number;
+}
+
+export interface OrderResponse {
+  id: number;
+  status: 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
+  totalAmount?: number;
+  paymentMethod?: string;
+  paymentStatus?: string;
+  address?: any;
+  note?: string;
+  items?: OrderResponseItem[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface OrderItemVM {
@@ -37,9 +59,8 @@ export interface OrderVM {
 
 function resolveImage(url?: string): string {
   if (!url) return '';
-  return url.startsWith('/')
-    ? `${(api.defaults.baseURL || '').replace(/\/+$/, '')}${url}`
-    : url;
+  const origin = (api.defaults.baseURL || '').replace(/\/+$/, '').replace(/\/api$/, '');
+  return url.startsWith('/') ? `${origin}${url}` : url;
 }
 
 function toVM(order: OrderDTO): OrderVM {
@@ -93,13 +114,13 @@ export async function getMyOrders(userId: string | number): Promise<OrderDTO[]> 
 }
 
 // ================================================
-// Merchant / Staff specific order management functions
+// Merchant / Staff / Admin specific order management functions
 // ================================================
 
 export interface StoreOrder {
   id: number;
-  code: string;
-  customerName: string;
+  code?: string;
+  customerName?: string;
   totalAmount: number;
   status: 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
   createdAt: string;
@@ -113,14 +134,39 @@ export interface Page<T> {
   size: number;
 }
 
-export async function getOrdersByStore(status: string, page: number = 0, size: number = 10): Promise<Page<StoreOrder>> {
-  const res = await api.get('/orders/store', {
+// New: list orders by status with pagination (for all roles)
+export async function getOrdersByStatus(status: string, page: number = 0, size: number = 20): Promise<Page<OrderResponse>> {
+  const res = await api.get('/orders/status', {
     params: { status, page, size },
   });
   return res.data;
 }
 
+// Old function was pointing to /orders/store which backend doesn't expose; keep for compatibility if needed
+export async function getOrdersByStore(status: string, page: number = 0, size: number = 10): Promise<Page<StoreOrder>> {
+  const res = await api.get('/orders/status', {
+    params: { status, page, size },
+  });
+  // Map to StoreOrder-like for legacy views
+  const data: Page<OrderResponse> = res.data;
+  return {
+    content: (data.content || []).map((o) => ({
+      id: o.id,
+      code: String(o.id),
+      customerName: undefined,
+      totalAmount: Number(o.totalAmount || 0),
+      status: o.status,
+      createdAt: String(o.createdAt || ''),
+    })),
+    totalPages: data.totalPages || 0,
+    totalElements: data.totalElements || 0,
+    number: data.number || 0,
+    size: data.size || size,
+  };
+}
+
+// Update order status: backend expects PATCH and status as request param
 export async function updateOrderStatus(orderId: number, status: string): Promise<OrderDTO> {
-  const res = await api.put(`/orders/${orderId}/status`, { status });
+  const res = await api.patch(`/orders/${orderId}/status`, null, { params: { status } });
   return res.data;
 }

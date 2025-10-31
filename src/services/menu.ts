@@ -19,6 +19,7 @@ export interface MenuItemViewModel {
   image: string;
   category: string;
   store: string;
+  storeId?: string;
   available: boolean;
 }
 
@@ -49,6 +50,7 @@ export async function fetchMenuItems(page = 0, size = 12): Promise<MenuItemViewM
     image: i.imageUrl ? (i.imageUrl.startsWith('/') ? `${(api.defaults.baseURL || '').replace(/\/+$/, '')}${i.imageUrl}` : i.imageUrl) : '',
     category: i.category?.name || 'Other',
     store: i.store?.name || 'Unknown',
+    storeId: i.store?.id ? String(i.store.id) : undefined,
     available: !!i.available,
   }));
 }
@@ -64,6 +66,7 @@ export async function fetchItemsByCategory(categoryId: number, page = 0, size = 
     image: i.imageUrl ? (i.imageUrl.startsWith('/') ? `${(api.defaults.baseURL || '').replace(/\/+$/, '')}${i.imageUrl}` : i.imageUrl) : '',
     category: i.category?.name || 'Other',
     store: i.store?.name || 'Unknown',
+    storeId: i.store?.id ? String(i.store.id) : undefined,
     available: !!i.available,
   }));
 }
@@ -79,6 +82,7 @@ export async function searchMenuItems(name: string, page = 0, size = 12): Promis
     image: i.imageUrl ? (i.imageUrl.startsWith('/') ? `${(api.defaults.baseURL || '').replace(/\/+$/, '')}${i.imageUrl}` : i.imageUrl) : '',
     category: i.category?.name || 'Other',
     store: i.store?.name || 'Unknown',
+    storeId: i.store?.id ? String(i.store.id) : undefined,
     available: !!i.available,
   }));
 }
@@ -109,6 +113,7 @@ export async function getAllMenuItems(page = 0, size = 20): Promise<MenuItemView
     image: i.imageUrl ? (i.imageUrl.startsWith('/') ? `${(api.defaults.baseURL || '').replace(/\/+$/, '')}${i.imageUrl}` : i.imageUrl) : '',
     category: i.category?.name || 'Other',
     store: i.store?.name || 'Unknown',
+    storeId: i.store?.id ? String(i.store.id) : undefined,
     available: !!i.available,
   }));
 }

@@ -52,6 +52,7 @@ import MerchantFeedback from './pages/merchant/MerchantFeedback';
 import { MerchantSessionProvider } from './store/merchantSession';
 import RequireManager from './components/route/RequireManager';
 import RequireStaff from './components/route/RequireStaff';
+import RequireCustomer from './components/route/RequireCustomer';
 import StaffLayout from './components/layouts/StaffLayout';
 import AuthDebug from './components/debug/AuthDebug';
 import StoreProfile from './pages/merchant/StoreProfile';
@@ -107,12 +108,12 @@ function App() {
           <Route path="cart" element={<PrivateRoute><Cart /></PrivateRoute>} />
           <Route path="checkout" element={<PrivateRoute><Checkout /></PrivateRoute>} />
           <Route path="profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
-          <Route path="payment/result" element={<PaymentResult />} />
-          <Route path="order/tracking/:id" element={<OrderTracking />} />
+  <Route path="payment/result" element={<PaymentResult />} />
+  <Route path="order/tracking/:id" element={<OrderTracking />} />
           <Route path="stores" element={<Stores />} />
           <Route path="stores/:id/menu" element={<StoreMenu />} />
-          <Route path="orders/history" element={<PrivateRoute><OrderHistory /></PrivateRoute>} />
-          <Route path="order/confirmation/:id" element={<PrivateRoute><OrderConfirmation /></PrivateRoute>} />
+          <Route path="orders/history" element={<RequireCustomer><OrderHistory /></RequireCustomer>} />
+          <Route path="order/confirmation/:id" element={<RequireCustomer><OrderConfirmation /></RequireCustomer>} />
           <Route path="notifications" element={<PrivateRoute><Notifications /></PrivateRoute>} />
           <Route path="debug" element={<AuthDebug />} />
         </Route>
