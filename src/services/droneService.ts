@@ -45,6 +45,12 @@ export interface ActiveDelivery {
   customerName: string;
   customerAddress: string;
   startTime: string;
+  // GPS coordinates for drone current position
+  currentLat?: number;
+  currentLng?: number;
+  // GPS coordinates for customer location
+  customerLat?: number;
+  customerLng?: number;
 }
 
 export const droneService = {

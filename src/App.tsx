@@ -34,6 +34,7 @@ import StaffManagement from './pages/admin/StaffManagement';
 import KitchenBoard from './pages/admin/KitchenBoard';
 import DroneConsole from './pages/admin/DroneConsole';
 import DroneTracking from './pages/admin/DroneTracking';
+import DroneManagement from './pages/admin/DroneManagement';
 import AdminStores from './pages/admin/Stores';
 import StoreDetail from './pages/admin/StoreDetail';
 // Merchant/Kitchen Portal Pages
@@ -129,6 +130,7 @@ function App() {
           <Route path="kitchen" element={<KitchenBoard />} />
           <Route path="drones" element={<DroneConsole />} />
           <Route path="drone-tracking" element={<DroneTracking />} />
+          <Route path="drone-management" element={<DroneManagement />} />
           <Route path="stores" element={<AdminStores />} />
           <Route path="stores/:id" element={<StoreDetail />} />
         </Route>

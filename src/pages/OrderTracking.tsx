@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import {
   Box,
+  Container,
   Typography,
   Paper,
   Stepper,
   Step,
   StepLabel,
+  StepContent,
   Grid,
   Card,
   CardContent,
@@ -16,35 +20,45 @@ import {
   ListItemAvatar,
   Avatar,
   Chip,
-  SvgIcon
+  SvgIcon,
+  StepIcon,
+  Alert,
+  AlertTitle,
+  CircularProgress,
+  Button,
+  Link,
 } from '@mui/material';
+import { styled, keyframes } from '@mui/material/styles';
 import {
   RestaurantMenu,
   CheckCircle,
   LocalShipping,
   Kitchen,
   FlightTakeoff,
-  TravelExplore
+  TravelExplore,
+  Restaurant,
+  Schedule
 } from '@mui/icons-material';
-import { useParams } from 'react-router-dom';
-import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import TrackingMap from '../components/TrackingMap';
 import api from '../services/api';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 // Order status steps
-const steps = ['Confirmed', 'Preparing', 'Ready for Delivery', 'Drone Delivery', 'Delivered'];
+const steps = ['Đã tạo', 'Đã xác nhận', 'Đang chuẩn bị', 'Sẵn sàng giao hàng', 'Drone đang giao', 'Đã giao hàng'];
 const statusToStep = {
-  confirmed: 0,
-  preparing: 1,
-  ready: 2,
-  delivering: 3,
-  delivered: 4
+  created: 0,
+  confirmed: 1,
+  preparing: 2,
+  ready: 3,
+  delivering: 4,
+  delivered: 5
 } as const;
 
 type StatusKey = keyof typeof statusToStep;
 
 const backendToUIStatus: Record<string, StatusKey> = {
+  CREATED: 'created',
   CONFIRMED: 'confirmed',
   PREPARING: 'preparing',
   READY_FOR_DELIVERY: 'ready',
@@ -52,8 +66,7 @@ const backendToUIStatus: Record<string, StatusKey> = {
   OUT_FOR_DELIVERY: 'delivering',
   DELIVERED: 'delivered',
   // Fallbacks for early states
-  CREATED: 'confirmed',
-  PENDING_PAYMENT: 'confirmed',
+  PENDING_PAYMENT: 'created',
   PAID: 'confirmed',
 };
 
@@ -68,6 +81,83 @@ const DroneIcon = (props: any) => (
     <path d="M6 6 L10 10 M18 6 L14 10 M6 18 L10 14 M18 18 L14 14" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
   </SvgIcon>
 );
+
+// Styled components for enhanced UI
+const ColoredStepper = styled(Stepper)(({ theme }) => ({
+  '& .MuiStepLabel-root .Mui-completed': {
+    color: theme.palette.success.main,
+  },
+  '& .MuiStepLabel-root .Mui-active': {
+    color: theme.palette.primary.main,
+    '& .MuiStepIcon-root': {
+      animation: 'pulse 2s infinite',
+    },
+  },
+  '& .MuiStepLabel-root .Mui-disabled': {
+    color: theme.palette.grey[400],
+  },
+  '@keyframes pulse': {
+    '0%': {
+      transform: 'scale(1)',
+      boxShadow: '0 0 0 0 rgba(25, 118, 210, 0.7)',
+    },
+    '70%': {
+      transform: 'scale(1.05)',
+      boxShadow: '0 0 0 10px rgba(25, 118, 210, 0)',
+    },
+    '100%': {
+      transform: 'scale(1)',
+      boxShadow: '0 0 0 0 rgba(25, 118, 210, 0)',
+    },
+  },
+}));
+
+const TimelineListItem = styled(ListItem)<{ isActive?: boolean; isCompleted?: boolean }>(({ theme, isActive, isCompleted }) => ({
+  borderRadius: theme.spacing(1),
+  marginBottom: theme.spacing(1),
+  transition: 'all 0.3s ease-in-out',
+  backgroundColor: isActive 
+    ? theme.palette.primary.light + '20'
+    : isCompleted 
+    ? theme.palette.success.light + '15'
+    : 'transparent',
+  border: isActive 
+    ? `2px solid ${theme.palette.primary.main}`
+    : isCompleted
+    ? `1px solid ${theme.palette.success.main}`
+    : '1px solid transparent',
+  transform: isActive ? 'scale(1.02)' : 'scale(1)',
+  boxShadow: isActive 
+    ? `0 4px 12px ${theme.palette.primary.main}25`
+    : isCompleted
+    ? `0 2px 8px ${theme.palette.success.main}15`
+    : 'none',
+  '&:hover': {
+    backgroundColor: isActive 
+      ? theme.palette.primary.light + '30'
+      : isCompleted 
+      ? theme.palette.success.light + '25'
+      : theme.palette.grey[50],
+  },
+}));
+
+const PulsingAvatar = styled(Avatar)<{ isActive?: boolean }>(({ theme, isActive }) => ({
+  animation: isActive ? 'avatarPulse 2s infinite' : 'none',
+  '@keyframes avatarPulse': {
+    '0%': {
+      transform: 'scale(1)',
+      boxShadow: `0 0 0 0 ${theme.palette.primary.main}70`,
+    },
+    '70%': {
+      transform: 'scale(1.1)',
+      boxShadow: `0 0 0 10px ${theme.palette.primary.main}00`,
+    },
+    '100%': {
+      transform: 'scale(1)',
+      boxShadow: `0 0 0 0 ${theme.palette.primary.main}00`,
+    },
+  },
+}));
 
 interface OrderItemUI {
   id: string | number;
@@ -100,195 +190,271 @@ const OrderTracking: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadOrderFromAPI = async (orderId: string) => {
-      try {
-        console.log('Loading order from API, orderId:', orderId);
-        const response = await api.get(`/orders/${orderId}`);
-        const raw = response.data;
-        console.log('API response:', raw);
-        
-        const statusRaw = (raw.status || '').toString().toUpperCase();
-        const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
-        
-        // Handle address properly - it might be a string or object
-        let address = 'N/A';
-        if (typeof raw.address === 'string') {
-          address = raw.address;
-        } else if (raw.address && typeof raw.address === 'object') {
-          const addr = raw.address;
-          address = [
-            addr.line1,
-            addr.ward,
-            addr.district,
-            addr.city
-          ].filter(Boolean).join(', ') || 'N/A';
-        }
-        
-        // Handle orderItems from API response
-        const rawItems = raw.orderItems || raw.items || [];
-        console.log('Raw items from API:', rawItems);
-        const items: OrderItemUI[] = Array.isArray(rawItems) ? rawItems.map((it: any) => ({
-          id: it.id || it.menuItemId || 'item',
-          name: it.menuItem?.name || it.name || 'Item',
-          quantity: Number(it.quantity || 1),
-          price: Number(it.unitPrice ?? it.menuItem?.price ?? it.price ?? 0),
-          image: it.menuItem?.imageUrl || it.image,
-        })) : [];
-        console.log('Processed items from API:', items);
-        
-        const ui: OrderUI = {
-          id: raw.id || orderId,
-          status: uiStatus,
-          items,
-          total: Number(raw.totalAmount ?? raw.total ?? 0),
-          deliveryFee: 0,
-          address,
-          estimatedDelivery: '30-45 minutes',
-          paymentMethod: (raw.paymentMethod || '').toString(),
-          paymentStatus: (raw.paymentStatus || '').toString(),
-        };
-        
-        console.log('Final UI order from API:', ui);
-        setOrder(ui);
-        setActiveStep(statusToStep[uiStatus]);
-        setIsArrivingSoon(statusToStep[uiStatus] === 3);
-        
-        // Save to localStorage for future use
-        localStorage.setItem('currentOrder', JSON.stringify(raw));
-        
-      } catch (err) {
-        console.error('Error loading order from API:', err);
-        setError('Không thể tải thông tin đơn hàng từ server.');
-      }
-    };
+  // Derive WebSocket endpoint from API base URL and Spring context-path
+  const wsUrl = ((api.defaults.baseURL || 'http://localhost:8080/api').replace(/\/+$/, '')
+    .replace(/\/api$/, '')) + '/api/ws';
+  const { isConnected, subscribe, unsubscribe } = useWebSocket({ url: wsUrl });
 
-    const loadOrderFromLocalStorage = async () => {
+  // Helper function to get step color
+  const getStepColor = (stepIndex: number) => {
+    if (stepIndex < activeStep) return 'success.main';
+    if (stepIndex === activeStep) return 'primary.main';
+    return 'grey.400';
+  };
+
+  // Helper function to get avatar background color
+  const getAvatarBgColor = (stepIndex: number) => {
+    if (stepIndex < activeStep) return 'success.main';
+    if (stepIndex === activeStep) return 'primary.main';
+    return 'grey.400';
+  };
+
+  // API call to get current order status from server
+  const fetchOrderFromAPI = async (orderId: string) => {
+    try {
+      console.log('Fetching order from API, orderId:', orderId);
+      const response = await api.get(`/orders/${orderId}`);
+      const raw = response.data;
+      console.log('API response:', raw);
+      
+      const statusRaw = (raw.status || '').toString().toUpperCase();
+      const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
+      
+      // Handle address properly - it might be a string or object
+      let address = 'N/A';
+      if (typeof raw.address === 'string') {
+        address = raw.address;
+      } else if (raw.address && typeof raw.address === 'object') {
+        const addr = raw.address;
+        address = [
+          addr.line1,
+          addr.ward,
+          addr.district,
+          addr.city
+        ].filter(Boolean).join(', ') || 'N/A';
+      }
+      
+      // Handle orderItems from API response
+      const rawItems = raw.orderItems || raw.items || [];
+      console.log('Raw items from API:', rawItems);
+      const items: OrderItemUI[] = Array.isArray(rawItems) ? rawItems.map((it: any) => ({
+        id: it.id || it.menuItemId || 'item',
+        name: it.menuItem?.name || it.name || 'Item',
+        quantity: Number(it.quantity || 1),
+        price: Number(it.unitPrice ?? it.menuItem?.price ?? it.price ?? 0),
+        image: it.menuItem?.imageUrl || it.image,
+      })) : [];
+      console.log('Processed items from API:', items);
+      
+      const ui: OrderUI = {
+        id: raw.id || orderId,
+        status: uiStatus,
+        items,
+        total: Number(raw.totalAmount ?? raw.total ?? 0),
+        deliveryFee: 0,
+        address,
+        estimatedDelivery: '30-45 minutes',
+        paymentMethod: (raw.paymentMethod || '').toString(),
+        paymentStatus: (raw.paymentStatus || '').toString(),
+      };
+      
+      console.log('Final UI order from API:', ui);
+      setOrder(ui);
+      setActiveStep(statusToStep[uiStatus]);
+      setIsArrivingSoon(statusToStep[uiStatus] === 4);
+      
+      // Save to localStorage for future use
+      localStorage.setItem('currentOrder', JSON.stringify(raw));
+      
+      return ui;
+    } catch (err) {
+      console.error('Error loading order from API:', err);
+      throw err;
+    }
+  };
+
+  useEffect(() => {
+    const loadOrder = async () => {
       if (!id) {
         setLoading(false);
         setError('Thiếu mã đơn hàng để theo dõi.');
         return;
       }
+
       setLoading(true);
       setError(null);
+
       try {
-        const rawStr = localStorage.getItem('currentOrder');
-        console.log('Raw localStorage data:', rawStr);
+        // Ưu tiên gọi API để lấy trạng thái mới nhất
+        console.log('Attempting to load order from API first...');
+        await fetchOrderFromAPI(id);
+        console.log('Successfully loaded order from API');
+      } catch (apiError) {
+        console.warn('API call failed, trying localStorage fallback:', apiError);
+        
+        try {
+          // Fallback to localStorage if API fails
+          const rawStr = localStorage.getItem('currentOrder');
+          console.log('Raw localStorage data:', rawStr);
 
-        if (rawStr) {
-          const raw = JSON.parse(rawStr);
-          console.log('Parsed order data:', raw);
+          if (rawStr) {
+            const raw = JSON.parse(rawStr);
+            console.log('Parsed order data from localStorage:', raw);
 
-          // Nếu ID trong localStorage không khớp, thử gọi API nếu có đăng nhập
-          if (raw.id && raw.id.toString() !== id) {
-            console.log('Order ID mismatch, loading from API if authenticated...');
-            if (userId) {
-              await loadOrderFromAPI(id);
-            } else {
-              setError('Không tìm thấy dữ liệu đơn hàng cho mã này. Vui lòng đăng nhập để tải từ server.');
+            // Kiểm tra ID có khớp không
+            if (raw.id && raw.id.toString() !== id) {
+              console.log('Order ID mismatch in localStorage');
+              throw new Error('Order ID mismatch');
             }
-            return;
-          }
 
-          const statusRaw = (raw.status || '').toString().toUpperCase();
-          const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
+            const statusRaw = (raw.status || '').toString().toUpperCase();
+            const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
 
-          // Xử lý địa chỉ: có thể là string hoặc object
-          let address = 'N/A';
-          if (typeof raw.address === 'string') {
-            address = raw.address;
-          } else if (raw.address && typeof raw.address === 'object') {
-            const addr = raw.address;
-            address = [addr.line1, addr.ward, addr.district, addr.city].filter(Boolean).join(', ') || 'N/A';
-          }
-
-          // Xử lý items từ localStorage
-          const rawItems = raw.orderItems || raw.items || [];
-          console.log('Raw items:', rawItems);
-          const items: OrderItemUI[] = Array.isArray(rawItems)
-            ? rawItems.map((it: any) => ({
-                id: it.id || it.menuItemId || 'item',
-                name: it.menuItem?.name || it.name || it.nameSnapshot || 'Item',
-                quantity: Number(it.quantity || 1),
-                price: Number(it.unitPrice ?? it.menuItem?.price ?? it.price ?? 0),
-                image: it.menuItem?.imageUrl || it.image || it.imageSnapshot,
-              }))
-            : [];
-          console.log('Processed items:', items);
-
-          const ui: OrderUI = {
-            id: raw.id || id,
-            status: uiStatus,
-            items,
-            total: Number(raw.totalAmount ?? raw.total ?? 0),
-            deliveryFee: 0,
-            address,
-            estimatedDelivery: '30-45 minutes',
-            paymentMethod: (raw.paymentMethod || '').toString(),
-            paymentStatus: (raw.paymentStatus || '').toString(),
-          };
-
-          console.log('Final UI order:', ui);
-          setOrder(ui);
-          setActiveStep(statusToStep[uiStatus]);
-          setIsArrivingSoon(statusToStep[uiStatus] === 3);
-
-          // Nếu không có item trong localStorage, thử lấy từ API để làm giàu dữ liệu
-          if (items.length === 0) {
-            console.log('No items found in localStorage order, trying API to enrich...');
-            if (userId) {
-              try {
-                await loadOrderFromAPI(id);
-              } catch (apiErr) {
-                console.warn('API enrichment failed, keep localStorage data:', apiErr);
-              }
+            // Xử lý địa chỉ: có thể là string hoặc object
+            let address = 'N/A';
+            if (typeof raw.address === 'string') {
+              address = raw.address;
+            } else if (raw.address && typeof raw.address === 'object') {
+              const addr = raw.address;
+              address = [addr.line1, addr.ward, addr.district, addr.city].filter(Boolean).join(', ') || 'N/A';
             }
+
+            // Xử lý items từ localStorage
+            const rawItems = raw.orderItems || raw.items || [];
+            console.log('Raw items from localStorage:', rawItems);
+            const items: OrderItemUI[] = Array.isArray(rawItems)
+              ? rawItems.map((it: any) => ({
+                  id: it.id || it.menuItemId || 'item',
+                  name: it.menuItem?.name || it.name || it.nameSnapshot || 'Item',
+                  quantity: Number(it.quantity || 1),
+                  price: Number(it.unitPrice ?? it.menuItem?.price ?? it.price ?? 0),
+                  image: it.menuItem?.imageUrl || it.image || it.imageSnapshot,
+                }))
+              : [];
+            console.log('Processed items from localStorage:', items);
+
+            const ui: OrderUI = {
+              id: raw.id || id,
+              status: uiStatus,
+              items,
+              total: Number(raw.totalAmount ?? raw.total ?? 0),
+              deliveryFee: 0,
+              address,
+              estimatedDelivery: '30-45 minutes',
+              paymentMethod: (raw.paymentMethod || '').toString(),
+              paymentStatus: (raw.paymentStatus || '').toString(),
+            };
+
+            console.log('Final UI order from localStorage:', ui);
+            setOrder(ui);
+            setActiveStep(statusToStep[uiStatus]);
+            setIsArrivingSoon(statusToStep[uiStatus] === 4);
+
+            console.log('Successfully loaded order from localStorage');
+          } else {
+            throw new Error('No order data found in localStorage');
           }
-        } else {
-          // Không có dữ liệu localStorage: nếu đã đăng nhập, gọi API; nếu không, báo lỗi
-          console.log('No currentOrder found in localStorage.');
+        } catch (localStorageError) {
+          console.error('Both API and localStorage failed:', localStorageError);
+          
+          // Nếu có user đăng nhập, hiển thị lỗi API; nếu không, yêu cầu đăng nhập
           if (userId) {
-            console.log('Authenticated, trying API...');
-            await loadOrderFromAPI(id);
+            setError('Không thể tải thông tin đơn hàng từ server. Vui lòng thử lại sau.');
           } else {
             setError('Không tìm thấy dữ liệu đơn hàng. Vui lòng đăng nhập để tải từ server.');
           }
-        }
-      } catch (err) {
-        console.error('Error loading order from localStorage:', err);
-        // Nếu localStorage lỗi: thử API khi có đăng nhập
-        if (userId) {
-          console.log('localStorage failed, trying API as fallback...');
-          try {
-            await loadOrderFromAPI(id);
-          } catch (apiErr) {
-            console.error('API fallback also failed:', apiErr);
-            setError('Không thể tải thông tin đơn hàng.');
-          }
-        } else {
-          setError('Không thể đọc dữ liệu đơn hàng từ trình duyệt. Vui lòng đăng nhập.');
         }
       } finally {
         setLoading(false);
       }
     };
 
-    loadOrderFromLocalStorage();
+    loadOrder();
   }, [id, userId]);
+
+  // Subscribe to real-time order status updates via WebSocket
+  useEffect(() => {
+    if (!id || !isConnected) return;
+
+    console.log('Subscribing to WebSocket updates for order:', id);
+    const sub = subscribe(`/topic/orders/${id}`, (message: any) => {
+      try {
+        console.log('Received WebSocket message:', message);
+        const type = message?.type ?? null;
+        const payload = message?.payload ?? message;
+
+        if (type === 'ORDER_STATUS_CHANGED' || typeof payload === 'string') {
+          const statusRaw = (typeof payload === 'string' ? payload : String(payload)).toUpperCase();
+          const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
+          console.log('Status updated via WebSocket:', statusRaw, '->', uiStatus);
+          
+          setOrder((prev) => prev ? { ...prev, status: uiStatus } : prev);
+          setActiveStep(statusToStep[uiStatus]);
+          setIsArrivingSoon(statusToStep[uiStatus] === 4);
+        } else if (type === 'DELIVERY_ARRIVING') {
+          console.log('Delivery arriving notification received');
+          setIsArrivingSoon(true);
+        }
+      } catch (e) {
+        console.warn('Failed to process WS message:', e);
+      }
+    });
+
+    return () => {
+      unsubscribe(sub);
+    };
+  }, [id, isConnected, subscribe, unsubscribe]);
+
+  const ErrorAlert = styled(Alert)`
+    margin: 16px 0;
+    border-radius: 8px;
+  `;
+  
+  const RetryButton = styled(Button)`
+    margin-top: 8px;
+  `;
 
   if (loading) {
     return (
-      <Box sx={{ py: 4 }}>
-        <Typography variant="h5">Loading order...</Typography>
-      </Box>
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
+          <CircularProgress size={40} />
+          <Typography variant="h6" color="text.secondary">
+            Đang tải thông tin đơn hàng...
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Vui lòng chờ trong giây lát
+          </Typography>
+        </Box>
+      </Container>
     );
   }
 
   if (error) {
     return (
-      <Box sx={{ py: 4 }}>
-        <Typography color="error" variant="h6">{error}</Typography>
-      </Box>
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <ErrorAlert severity="error">
+          <AlertTitle>Lỗi tải dữ liệu</AlertTitle>
+          {error}
+          <RetryButton 
+            variant="outlined" 
+            color="error" 
+            size="small"
+            onClick={() => window.location.reload()}
+          >
+            Thử lại
+          </RetryButton>
+        </ErrorAlert>
+        
+        {!userId && (
+          <Box mt={2}>
+            <Alert severity="info">
+              <AlertTitle>Gợi ý</AlertTitle>
+              Bạn có thể <Link href="/login">đăng nhập</Link> để tải dữ liệu đơn hàng từ server.
+            </Alert>
+          </Box>
+        )}
+      </Container>
     );
   }
 
@@ -299,7 +465,7 @@ const OrderTracking: React.FC = () => {
   return (
     <Box sx={{ py: 4 }}>
       <Typography variant="h4" component="h1" gutterBottom>
-        Order Tracking
+        Theo Dõi Đơn Hàng
       </Typography>
       
       <Grid container spacing={4}>
@@ -309,23 +475,35 @@ const OrderTracking: React.FC = () => {
               p: 3, 
               mb: 3,
               border: isArrivingSoon ? '2px solid #f44336' : 'none',
-              boxShadow: isArrivingSoon ? '0 0 10px rgba(244, 67, 54, 0.5)' : 'none'
+              boxShadow: isArrivingSoon ? '0 0 20px rgba(244, 67, 54, 0.3)' : 3,
+              borderRadius: 2,
             }}
           >
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6">
-                Order Status
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                Trạng Thái Đơn Hàng
               </Typography>
+              {isConnected && (
+                <Chip 
+                  label=" Kết nối trực tiếp" 
+                  color="success" 
+                  size="small"
+                  sx={{ fontSize: '0.75rem' }}
+                />
+              )}
               {isArrivingSoon && (
                 <Chip 
-                  label="Arriving Soon!" 
+                  label=" Sắp tới!" 
                   color="error" 
-                  sx={{ animation: 'pulse 1.5s infinite' }}
+                  sx={{ 
+                    animation: 'pulse 1.5s infinite',
+                    fontWeight: 600,
+                  }}
                 />
               )}
             </Box>
             
-            <Stepper activeStep={activeStep} alternativeLabel>
+            <ColoredStepper activeStep={activeStep} alternativeLabel sx={{ mb: 4 }}>
               {steps.map((label, index) => {
                 const stepProps = {};
                 const labelProps = {} as any;
@@ -335,11 +513,18 @@ const OrderTracking: React.FC = () => {
                     <StepLabel 
                       {...labelProps}
                       StepIconProps={{
-                        icon: index === 0 ? <RestaurantMenu /> :
-                              index === 1 ? <Kitchen /> :
-                              index === 2 ? <TravelExplore /> :
-                              index === 3 ? <DroneIcon /> :
+                        icon: index === 0 ? <Schedule /> :
+                              index === 1 ? <RestaurantMenu /> :
+                              index === 2 ? <Kitchen /> :
+                              index === 3 ? <TravelExplore /> :
+                              index === 4 ? <DroneIcon /> :
                               <CheckCircle />
+                      }}
+                      sx={{
+                        '& .MuiStepLabel-label': {
+                          color: getStepColor(index),
+                          fontWeight: index === activeStep ? 600 : 400,
+                        }
                       }}
                     >
                       {label}
@@ -347,14 +532,14 @@ const OrderTracking: React.FC = () => {
                   </Step>
                 );
               })}
-            </Stepper>
+            </ColoredStepper>
             
-            <Box sx={{ mt: 4, mb: 2 }}>
-              <Typography variant="body1" gutterBottom>
-                Estimated Delivery Time: <strong>{order.estimatedDelivery}</strong>
+            <Box sx={{ mt: 4, mb: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+              <Typography variant="body1" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+                 Thời gian giao hàng dự kiến: <strong style={{ marginLeft: 8 }}>{order.estimatedDelivery}</strong>
               </Typography>
-              <Typography variant="body1">
-                Delivery Address: <strong>{order.address}</strong>
+              <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center' }}>
+                 Địa chỉ giao hàng: <strong style={{ marginLeft: 8 }}>{order.address}</strong>
               </Typography>
             </Box>
             
@@ -363,108 +548,183 @@ const OrderTracking: React.FC = () => {
             </Box>
           </Paper>
           
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Order Timeline
+          <Paper sx={{ p: 3, borderRadius: 2 }}>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
+               Lịch Sử Đơn Hàng
             </Typography>
             
-            <List>
-              {activeStep >= 0 && (
-                <ListItem>
+            <List sx={{ p: 0 }}>
+              <TimelineListItem 
+                isCompleted={activeStep > 0}
+                isActive={activeStep === 0}
+              >
+                <ListItemAvatar>
+                  <PulsingAvatar 
+                    sx={{ bgcolor: getAvatarBgColor(0) }}
+                    isActive={activeStep === 0}
+                  >
+                    <Schedule />
+                  </PulsingAvatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary={
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                       Đơn hàng đã tạo
+                    </Typography>
+                  }
+                  secondary="Đơn hàng của bạn đã được tạo và đang chờ xác nhận"
+                />
+                <Typography variant="body2" color="text.secondary">
+                  {new Date(Date.now() - 1000 * 60 * 20).toLocaleTimeString()}
+                </Typography>
+              </TimelineListItem>
+              
+              {activeStep >= 1 && (
+                <TimelineListItem 
+                  isCompleted={activeStep > 1}
+                  isActive={activeStep === 1}
+                >
                   <ListItemAvatar>
-                    <Avatar sx={{ bgcolor: 'primary.main' }}>
+                    <PulsingAvatar 
+                      sx={{ bgcolor: getAvatarBgColor(1) }}
+                      isActive={activeStep === 1}
+                    >
                       <RestaurantMenu />
-                    </Avatar>
+                    </PulsingAvatar>
                   </ListItemAvatar>
                   <ListItemText
-                    primary="Order Confirmed"
-                    secondary="Your order has been received and confirmed"
+                    primary={
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                         Đơn hàng đã xác nhận
+                      </Typography>
+                    }
+                    secondary="Đơn hàng của bạn đã được tiếp nhận và xác nhận"
                   />
                   <Typography variant="body2" color="text.secondary">
                     {new Date(Date.now() - 1000 * 60 * 15).toLocaleTimeString()}
                   </Typography>
-                </ListItem>
+                </TimelineListItem>
               )}
               
-              {activeStep >= 1 && (
-                <ListItem>
+              {activeStep >= 2 && (
+                <TimelineListItem 
+                  isCompleted={activeStep > 2}
+                  isActive={activeStep === 2}
+                >
                   <ListItemAvatar>
-                    <Avatar sx={{ bgcolor: 'primary.main' }}>
+                    <PulsingAvatar 
+                      sx={{ bgcolor: getAvatarBgColor(2) }}
+                      isActive={activeStep === 2}
+                    >
                       <Kitchen />
-                    </Avatar>
+                    </PulsingAvatar>
                   </ListItemAvatar>
                   <ListItemText
-                    primary="Preparing Your Order"
-                    secondary="Our chefs are preparing your delicious meal"
+                    primary={
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                         Đang chuẩn bị món ăn
+                      </Typography>
+                    }
+                    secondary="Đầu bếp đang chuẩn bị những món ăn ngon cho bạn"
                   />
                   <Typography variant="body2" color="text.secondary">
                     {new Date(Date.now() - 1000 * 60 * 10).toLocaleTimeString()}
                   </Typography>
-                </ListItem>
+                </TimelineListItem>
               )}
               
-              {activeStep >= 2 && (
-                <ListItem>
+              {activeStep >= 3 && (
+                <TimelineListItem 
+                  isCompleted={activeStep > 3}
+                  isActive={activeStep === 3}
+                >
                   <ListItemAvatar>
-                    <Avatar sx={{ bgcolor: 'primary.main' }}>
+                    <PulsingAvatar 
+                      sx={{ bgcolor: getAvatarBgColor(3) }}
+                      isActive={activeStep === 3}
+                    >
                       <TravelExplore />
-                    </Avatar>
+                    </PulsingAvatar>
                   </ListItemAvatar>
                   <ListItemText
-                    primary="Đang tìm drone để giao"
+                    primary={
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                         Đang tìm drone để giao
+                      </Typography>
+                    }
                     secondary="Hệ thống đang chọn drone phù hợp cho đơn hàng của bạn"
                   />
                   <Typography variant="body2" color="text.secondary">
                     {new Date(Date.now() - 1000 * 60 * 5).toLocaleTimeString()}
                   </Typography>
-                </ListItem>
+                </TimelineListItem>
               )}
               
-              {activeStep >= 3 && (
-                <ListItem>
+              {activeStep >= 4 && (
+                <TimelineListItem 
+                  isCompleted={activeStep > 4}
+                  isActive={activeStep === 4}
+                >
                   <ListItemAvatar>
-                    <Avatar sx={{ bgcolor: isArrivingSoon ? 'error.main' : 'primary.main' }}>
+                    <PulsingAvatar 
+                      sx={{ 
+                        bgcolor: isArrivingSoon ? 'error.main' : getAvatarBgColor(4),
+                        animation: isArrivingSoon ? 'avatarPulse 1s infinite' : activeStep === 4 ? 'avatarPulse 2s infinite' : 'none'
+                      }}
+                      isActive={activeStep === 4 || isArrivingSoon}
+                    >
                       <DroneIcon />
-                    </Avatar>
+                    </PulsingAvatar>
                   </ListItemAvatar>
                   <ListItemText
-                    primary={isArrivingSoon ? "Drone sắp tới!" : "Drone đang giao hàng"}
+                    primary={
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                        {isArrivingSoon ? " Drone sắp tới!" : " Drone đang giao hàng"}
+                      </Typography>
+                    }
                     secondary="Đơn hàng đang được drone vận chuyển tới vị trí của bạn"
                   />
                   <Typography variant="body2" color="text.secondary">
                     {new Date(Date.now() - 1000 * 60 * 2).toLocaleTimeString()}
                   </Typography>
-                </ListItem>
+                </TimelineListItem>
               )}
               
-              {activeStep >= 4 && (
-                <ListItem>
+              {activeStep >= 5 && (
+                <TimelineListItem 
+                  isCompleted={true}
+                  isActive={false}
+                >
                   <ListItemAvatar>
                     <Avatar sx={{ bgcolor: 'success.main' }}>
                       <CheckCircle />
                     </Avatar>
                   </ListItemAvatar>
                   <ListItemText
-                    primary="Delivered"
-                    secondary="Your order has been delivered. Enjoy!"
+                    primary={
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                         Đã giao hàng thành công
+                      </Typography>
+                    }
+                    secondary="Đơn hàng đã được giao thành công. Chúc bạn ngon miệng!"
                   />
                   <Typography variant="body2" color="text.secondary">
                     {new Date().toLocaleTimeString()}
                   </Typography>
-                </ListItem>
+                </TimelineListItem>
               )}
             </List>
           </Paper>
         </Grid>
         
         <Grid item xs={12} md={4}>
-          <Card sx={{ mb: 3, borderRadius: 2 }}>
-            <CardContent sx={{ p: 2.5 }}>
-              <Typography variant="h6" gutterBottom>
-                Order Details
+          <Card sx={{ mb: 3, borderRadius: 2, boxShadow: 3 }}>
+            <CardContent sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                 Chi Tiết Đơn Hàng
               </Typography>
               <Typography variant="body2" color="text.secondary" gutterBottom>
-                Order #{order.id}
+                Mã đơn hàng: #{order.id}
               </Typography>
               
               <Divider sx={{ my: 2 }} />
@@ -482,9 +742,14 @@ const OrderTracking: React.FC = () => {
                   </ListItem>
                 ) : (
                   order.items.map((item) => (
-                    <ListItem key={item.id} sx={{ py: 1.25, px: 0, alignItems: 'center' }}>
+                    <ListItem key={item.id} sx={{ py: 1.5, px: 0, alignItems: 'center' }}>
                       <ListItemAvatar sx={{ mr: 2 }}>
-                        <Avatar src={item.image} alt={item.name} variant="rounded" sx={{ width: 56, height: 56, borderRadius: 2 }} />
+                        <Avatar 
+                          src={item.image} 
+                          alt={item.name} 
+                          variant="rounded" 
+                          sx={{ width: 56, height: 56, borderRadius: 2, boxShadow: 1 }} 
+                        />
                       </ListItemAvatar>
                       <ListItemText
                         sx={{ minWidth: 0, mr: 1 }}
@@ -504,11 +769,9 @@ const OrderTracking: React.FC = () => {
                           </Box>
                         }
                       />
-                      <Box sx={{ textAlign: 'right', ml: 2, minWidth: 90, flexShrink: 0 }}>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                          {(item.price * item.quantity).toLocaleString('vi-VN')}đ
-                        </Typography>
-                      </Box>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'primary.main' }}>
+                        {(item.price * item.quantity).toLocaleString('vi-VN')}đ
+                      </Typography>
                     </ListItem>
                   ))
                 )}
@@ -517,8 +780,17 @@ const OrderTracking: React.FC = () => {
               <Divider sx={{ my: 2 }} />
               
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="body1">Subtotal</Typography>
-                <Typography variant="body1">
+                <Typography variant="body2">Tạm tính:</Typography>
+                <Typography variant="body2">{order.total.toLocaleString('vi-VN')}đ</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="body2">Phí giao hàng:</Typography>
+                <Typography variant="body2">{order.deliveryFee.toLocaleString('vi-VN')}đ</Typography>
+              </Box>
+              <Divider sx={{ my: 1 }} />
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>Tổng cộng:</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600, color: 'primary.main' }}>
                   {(order.items.length > 0
                     ? order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0)
                     : order.total
@@ -526,40 +798,16 @@ const OrderTracking: React.FC = () => {
                 </Typography>
               </Box>
               
-              {order.deliveryFee > 0 && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography variant="body1">Phí giao hàng</Typography>
-                  <Typography variant="body1">{order.deliveryFee.toLocaleString('vi-VN')}đ</Typography>
-                </Box>
-              )}
-              
               <Divider sx={{ my: 2 }} />
               
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="h6">Total</Typography>
-                <Typography variant="h6" color="primary" sx={{ fontWeight: 700 }}>
-                  {((order.items.length > 0
-                    ? order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0)
-                    : order.total
-                  ) + order.deliveryFee).toLocaleString('vi-VN')}đ
-                </Typography>
-              </Box>
-            </CardContent>
-          </Card>
-          
-          <Card sx={{ borderRadius: 2 }}>
-            <CardContent sx={{ p: 2.5 }}>
-              <Typography variant="h6" gutterBottom>
-                Payment Information
+              <Typography variant="body2" color="text.secondary">
+                 Phương thức thanh toán: {order.paymentMethod || 'Chưa xác định'}
               </Typography>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <Chip label={`Method: ${order.paymentMethod}`} color="primary" variant="outlined" />
-                <Chip
-                  label={`Status: ${order.paymentStatus || 'N/A'}`}
-                  color={order.paymentStatus === 'PAID' ? 'success' : 'warning'}
-                  variant="outlined"
-                />
-              </Box>
+              {order.paymentStatus && (
+                <Typography variant="body2" color="text.secondary">
+                  Trạng thái thanh toán: {order.paymentStatus}
+                </Typography>
+              )}
             </CardContent>
           </Card>
         </Grid>

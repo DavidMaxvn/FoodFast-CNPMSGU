@@ -196,24 +196,24 @@ const KitchenBoard: React.FC = () => {
 
   // Priority configuration
   const priorityConfig: Record<Priority, { label: string; color: any; bgcolor: string }> = {
-    URGENT: { label: 'Urgent', color: 'error', bgcolor: '#ffebee' },
-    HIGH: { label: 'High', color: 'warning', bgcolor: '#fff3e0' },
-    NORMAL: { label: 'Normal', color: 'success', bgcolor: '#e8f5e9' }
+    URGENT: { label: 'Khẩn cấp', color: 'error', bgcolor: '#ffebee' },
+    HIGH: { label: 'Cao', color: 'warning', bgcolor: '#fff3e0' },
+    NORMAL: { label: 'Bình thường', color: 'success', bgcolor: '#e8f5e9' }
   };
 
   // Order type configuration
   const typeConfig = {
-    DINE_IN: { label: 'Dine In', icon: <Restaurant />, color: 'info' },
-    TAKEAWAY: { label: 'Takeaway', icon: <Timer />, color: 'warning' },
-    DELIVERY: { label: 'Delivery', icon: <LocalShipping />, color: 'primary' }
+    DINE_IN: { label: 'Tại chỗ', icon: <Restaurant />, color: 'info' },
+    TAKEAWAY: { label: 'Mang đi', icon: <Timer />, color: 'warning' },
+    DELIVERY: { label: 'Giao hàng', icon: <LocalShipping />, color: 'primary' }
   };
 
   // Status configuration
   const statusConfig = {
-    PENDING: { label: 'Pending', color: 'default', icon: <AccessTime /> },
-    PREPARING: { label: 'Preparing', color: 'warning', icon: <Restaurant /> },
-    READY: { label: 'Ready', color: 'success', icon: <CheckCircle /> },
-    COMPLETED: { label: 'Completed', color: 'default', icon: <Check /> }
+    PENDING: { label: 'Chờ xử lý', color: 'default', icon: <AccessTime /> },
+    PREPARING: { label: 'Đang chuẩn bị', color: 'warning', icon: <Restaurant /> },
+    READY: { label: 'Sẵn sàng', color: 'success', icon: <CheckCircle /> },
+    COMPLETED: { label: 'Hoàn thành', color: 'default', icon: <Check /> }
   };
 
   // Calculate statistics
@@ -506,7 +506,7 @@ const KitchenBoard: React.FC = () => {
             <Typography variant="h3" fontWeight="bold" color="warning.dark">
               {stats.pending}
             </Typography>
-            <Typography variant="body2" color="text.secondary">Pending</Typography>
+            <Typography variant="body2" color="text.secondary">Chờ xử lý</Typography>
           </Paper>
         </Grid>
         <Grid item xs={6} sm={6} md={2.4}>
@@ -514,7 +514,7 @@ const KitchenBoard: React.FC = () => {
             <Typography variant="h3" fontWeight="bold" color="info.dark">
               {stats.preparing}
             </Typography>
-            <Typography variant="body2" color="text.secondary">Preparing</Typography>
+            <Typography variant="body2" color="text.secondary">Đang chuẩn bị</Typography>
           </Paper>
         </Grid>
         <Grid item xs={6} sm={6} md={2.4}>
@@ -522,7 +522,7 @@ const KitchenBoard: React.FC = () => {
             <Typography variant="h3" fontWeight="bold" color="success.dark">
               {stats.ready}
             </Typography>
-            <Typography variant="body2" color="text.secondary">Ready</Typography>
+            <Typography variant="body2" color="text.secondary">Sẵn sàng</Typography>
           </Paper>
         </Grid>
         <Grid item xs={6} sm={6} md={2.4}>
@@ -552,14 +552,14 @@ const KitchenBoard: React.FC = () => {
           <Paper sx={{ p: 2, bgcolor: 'grey.50', minHeight: 400 }}>
             <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <AccessTime color="warning" />
-              Pending ({pendingOrders.length})
+              Chờ xử lý ({pendingOrders.length})
             </Typography>
             <Divider sx={{ mb: 2 }} />
             {pendingOrders.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
                 <AccessTime sx={{ fontSize: 60, opacity: 0.3 }} />
                 <Typography variant="body2" sx={{ mt: 1 }}>
-                  No pending orders
+                  Không có đơn hàng chờ xử lý
                 </Typography>
               </Box>
             ) : (
@@ -573,14 +573,14 @@ const KitchenBoard: React.FC = () => {
           <Paper sx={{ p: 2, bgcolor: 'grey.50', minHeight: 400 }}>
             <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Restaurant color="info" />
-              Preparing ({preparingOrders.length})
+              Đang chuẩn bị ({preparingOrders.length})
             </Typography>
             <Divider sx={{ mb: 2 }} />
             {preparingOrders.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
                 <Restaurant sx={{ fontSize: 60, opacity: 0.3 }} />
                 <Typography variant="body2" sx={{ mt: 1 }}>
-                  No orders in preparation
+                  Không có đơn hàng đang chuẩn bị
                 </Typography>
               </Box>
             ) : (
@@ -594,14 +594,14 @@ const KitchenBoard: React.FC = () => {
           <Paper sx={{ p: 2, bgcolor: 'grey.50', minHeight: 400 }}>
             <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <CheckCircle color="success" />
-              Ready ({readyOrders.length})
+              Sẵn sàng ({readyOrders.length})
             </Typography>
             <Divider sx={{ mb: 2 }} />
             {readyOrders.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
                 <CheckCircle sx={{ fontSize: 60, opacity: 0.3 }} />
                 <Typography variant="body2" sx={{ mt: 1 }}>
-                  No ready orders
+                  Không có đơn hàng sẵn sàng
                 </Typography>
               </Box>
             ) : (

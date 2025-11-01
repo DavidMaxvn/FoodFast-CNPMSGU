@@ -170,3 +170,48 @@ export async function updateOrderStatus(orderId: number, status: string): Promis
   const res = await api.patch(`/orders/${orderId}/status`, null, { params: { status } });
   return res.data;
 }
+
+// ================================================
+// Drone Assignment and Tracking APIs
+// ================================================
+
+export interface DroneAssignmentResponse {
+  orderId: number;
+  droneId: number;
+  deliveryId: number;
+  message: string;
+}
+
+export interface DeliveryTrackingResponse {
+  orderId: number;
+  droneId: number;
+  deliveryId: number;
+  status: string;
+  currentLat: number;
+  currentLng: number;
+  progress: number;
+  estimatedArrival: string;
+  waypoints: Array<{
+    lat: number;
+    lng: number;
+    timestamp: string;
+  }>;
+}
+
+// Auto-assign drone to order when status is READY_FOR_DELIVERY
+export async function assignDroneToOrder(orderId: number): Promise<DroneAssignmentResponse> {
+  const res = await api.post(`/orders/${orderId}/assign-drone`);
+  return res.data;
+}
+
+// Get real-time delivery tracking information
+export async function getDeliveryTracking(orderId: number): Promise<DeliveryTrackingResponse> {
+  const res = await api.get(`/orders/${orderId}/delivery-tracking`);
+  return res.data;
+}
+
+// Complete delivery manually
+export async function completeDelivery(orderId: number): Promise<{ message: string }> {
+  const res = await api.post(`/orders/${orderId}/complete-delivery`);
+  return res.data;
+}

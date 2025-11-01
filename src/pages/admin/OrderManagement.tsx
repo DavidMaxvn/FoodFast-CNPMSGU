@@ -1,61 +1,77 @@
 import React, { useState, useEffect } from 'react';
 import {
+  Alert,
+  Avatar,
+  Badge,
   Box,
-  Typography,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  FormControl,
+  Grid,
+  IconButton,
+  InputAdornment,
+  InputLabel,
+  List,
+  ListItem,
+  ListItemText,
+  MenuItem,
   Paper,
+  Select,
+  SelectChangeEvent,
+  Stack,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Chip,
-  Button,
-  Grid,
-  Card,
-  CardContent,
-  TextField,
-  InputAdornment,
   Tabs,
-  Tab,
-  Badge,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  List,
-  ListItem,
-  ListItemText,
-  Divider,
-  Avatar,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
+  TextField,
   Tooltip,
-  Alert,
-  Stack,
-  SelectChangeEvent,
-  CircularProgress
+  Typography
 } from '@mui/material';
 import {
-  Search,
-  Visibility,
-  CheckCircle,
-  LocalShipping,
-  Restaurant,
-  Cancel,
-  Refresh,
-  FilterList,
-  Receipt,
   AccessTime,
+  Cancel,
+  CheckCircle,
+  FilterList,
+  FlightTakeoff,
+  GpsFixed,
+  LocalShipping,
+  LocationOn,
+  Payment,
   Person,
   Phone,
-  LocationOn,
-  Payment
+  Receipt,
+  Refresh,
+  Restaurant,
+  Search,
+  Timeline,
+  Visibility
 } from '@mui/icons-material';
-import { getOrdersByStatus, updateOrderStatus, getOrderById, OrderResponse, Page, OrderDTO } from '../../services/order';
+import { 
+  getOrdersByStatus, 
+  updateOrderStatus, 
+  getOrderById, 
+  OrderResponse, 
+  Page, 
+  OrderDTO,
+  assignDroneToOrder,
+  getDeliveryTracking,
+  completeDelivery,
+  DroneAssignmentResponse,
+  DeliveryTrackingResponse
+} from '../../services/order';
+import DeliveryTracking from '../../components/DeliveryTracking';
 
 // Order status types
 type OrderStatus = 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
@@ -107,6 +123,10 @@ interface Order {
   note?: string;
   items: OrderItem[];
   storeName: string;
+  // Drone tracking information
+  droneId?: number;
+  deliveryId?: number;
+  deliveryTracking?: DeliveryTrackingResponse;
 }
 
 // Mock orders data
@@ -242,6 +262,10 @@ const OrderManagement: React.FC = () => {
   const [pageData, setPageData] = useState<Page<OrderResponse> | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  
+  // Drone tracking states
+  const [trackingDialogOpen, setTrackingDialogOpen] = useState(false);
+  const [droneAssigning, setDroneAssigning] = useState<number | null>(null);
 
   // Status configuration
   const statusConfig: Record<OrderStatus, { label: string; color: any; icon: any }> = {
@@ -376,12 +400,70 @@ const OrderManagement: React.FC = () => {
     if (!target) return;
     try {
       await updateOrderStatus(orderId, target);
-      setSuccessMessage(`Đã cập nhật trạng thái đơn hàng thành ${statusConfig[nextStatus].label}`);
+      
+      // Auto-assign drone when status changes to READY_FOR_DELIVERY
+      if (target === 'READY_FOR_DELIVERY') {
+        try {
+          setDroneAssigning(orderId);
+          const droneAssignment = await assignDroneToOrder(orderId);
+          setSuccessMessage(`Đã cập nhật trạng thái và gán drone #${droneAssignment.droneId} cho đơn hàng`);
+        } catch (droneError: any) {
+          setSuccessMessage(`Đã cập nhật trạng thái thành ${statusConfig[nextStatus].label}. Lỗi gán drone: ${droneError?.response?.data?.message || 'Không thể gán drone'}`);
+        } finally {
+          setDroneAssigning(null);
+        }
+      } else {
+        setSuccessMessage(`Đã cập nhật trạng thái đơn hàng thành ${statusConfig[nextStatus].label}`);
+      }
+      
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
       fetchData();
     } catch (e: any) {
       setErrorMessage(e?.response?.data?.message || 'Cập nhật trạng thái thất bại');
+      setShowError(true);
+      setTimeout(() => setShowError(false), 4000);
+    }
+  };
+
+  // Handle drone assignment manually
+  const handleAssignDrone = async (orderId: number) => {
+    try {
+      setDroneAssigning(orderId);
+      const result = await assignDroneToOrder(orderId);
+      setSuccessMessage(`Đã gán drone #${result.droneId} cho đơn hàng #${orderId}`);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+      fetchData();
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || 'Không thể gán drone');
+      setShowError(true);
+      setTimeout(() => setShowError(false), 4000);
+    } finally {
+      setDroneAssigning(null);
+    }
+  };
+
+  // Handle delivery tracking
+  const handleViewTracking = (orderId: number) => {
+    const order = orders.find(o => o.id === orderId);
+    if (order) {
+      setSelectedOrder(order);
+      setTrackingDialogOpen(true);
+    }
+  };
+
+  // Handle complete delivery
+  const handleCompleteDelivery = async (orderId: number) => {
+    try {
+      await completeDelivery(orderId);
+      setSuccessMessage('Đã hoàn thành giao hàng');
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+      setTrackingDialogOpen(false);
+      fetchData();
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || 'Không thể hoàn thành giao hàng');
       setShowError(true);
       setTimeout(() => setShowError(false), 4000);
     }
@@ -608,6 +690,35 @@ const OrderManagement: React.FC = () => {
                           <Visibility />
                         </IconButton>
                       </Tooltip>
+                      
+                      {/* Ẩn Drone Assignment Button cho demo - chỉ dùng auto-assign */}
+                      {/* {order.status === 'READY' && (
+                        <Tooltip title="Gán drone">
+                          <IconButton
+                            size="small"
+                            color="secondary"
+                            disabled={droneAssigning === order.id}
+                            onClick={() => handleAssignDrone(order.id)}
+                          >
+                            {droneAssigning === order.id ? <CircularProgress size={16} /> : <FlightTakeoff />}
+                          </IconButton>
+                        </Tooltip>
+                      )} */}
+                      
+                      {/* Delivery Tracking Button - Show for DELIVERING status */}
+                      {/* Ẩn tính năng theo dõi giao hàng cho demo */}
+                      {/* {order.status === 'DELIVERING' && (
+                        <Tooltip title="Theo dõi giao hàng">
+                          <IconButton
+                            size="small"
+                            color="warning"
+                            onClick={() => handleViewTracking(order.id)}
+                          >
+                            <GpsFixed />
+                          </IconButton>
+                        </Tooltip>
+                      )} */}
+                      
                       {nextStatus && (
                         <Tooltip title={`Chuyển sang ${statusConfig[nextStatus].label}`}>
                           <IconButton
@@ -800,6 +911,31 @@ const OrderManagement: React.FC = () => {
               Chuyển sang {statusConfig[getNextStatus(selectedOrder.status)!].label}
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Delivery Tracking Dialog */}
+      <Dialog open={trackingDialogOpen} onClose={() => setTrackingDialogOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="h6">Theo dõi giao hàng - Đơn hàng #{selectedOrder?.id}</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 3 }}>
+          {selectedOrder && (
+            <DeliveryTracking
+              orderId={selectedOrder.id}
+              onComplete={() => {
+                setTrackingDialogOpen(false);
+                fetchData();
+              }}
+              autoRefresh={true}
+              refreshInterval={3000}
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTrackingDialogOpen(false)}>Đóng</Button>
         </DialogActions>
       </Dialog>
     </Box>

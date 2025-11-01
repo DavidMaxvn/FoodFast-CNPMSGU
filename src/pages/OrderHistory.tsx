@@ -35,6 +35,16 @@ const OrderHistory: React.FC = () => {
     return new Date(date).toLocaleString('vi-VN');
   };
 
+  // Status mapping to Vietnamese
+  const statusLabels: Record<string, string> = {
+    'CREATED': 'Mới tạo',
+    'CONFIRMED': 'Đã xác nhận',
+    'PREPARING': 'Đang chuẩn bị',
+    'DELIVERING': 'Đang giao',
+    'COMPLETED': 'Hoàn thành',
+    'CANCELLED': 'Đã hủy'
+  };
+
   const statusColor = (s: OrderVM['status']) => {
     switch (s) {
       case 'COMPLETED':
@@ -43,11 +53,19 @@ const OrderHistory: React.FC = () => {
         return 'info';
       case 'PREPARING':
         return 'warning';
+      case 'CONFIRMED':
+        return 'primary';
+      case 'CREATED':
+        return 'default';
       case 'CANCELLED':
         return 'error';
       default:
         return 'default';
     }
+  };
+
+  const getStatusLabel = (status: string) => {
+    return statusLabels[status] || status;
   };
 
   const handleChangePage = (_: unknown, newPage: number) => {
@@ -98,7 +116,7 @@ const OrderHistory: React.FC = () => {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Chip label={o.status} color={statusColor(o.status) as any} size="small" />
+                      <Chip label={getStatusLabel(o.status)} color={statusColor(o.status) as any} size="small" />
                     </TableCell>
                     <TableCell align="center">
                       <Stack direction="row" spacing={1} justifyContent="center">

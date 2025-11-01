@@ -32,6 +32,7 @@ import {
 } from '@mui/icons-material';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { droneService, ActiveDelivery, DroneGpsUpdate, DroneStateChange, DeliveryEtaUpdate } from '../../services/droneService';
+import DroneMap from '../../components/DroneMap';
 
 // Remove duplicate interfaces since they're imported from service
 const DroneTracking: React.FC = () => {
@@ -353,29 +354,60 @@ const DroneTracking: React.FC = () => {
           </Paper>
         </Grid>
 
-        {/* Map Placeholder */}
+        {/* Real-time Drone Map */}
         <Grid item xs={12}>
-          <Paper sx={{ p: 2, height: '400px' }}>
+          <Paper sx={{ p: 2 }}>
             <Typography variant="h6" gutterBottom>
-              Drone Locations Map
+              Real-time Drone Locations
             </Typography>
-            <Box 
-              sx={{ 
-                height: '350px', 
-                backgroundColor: '#f5f5f5', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                border: '2px dashed #ccc',
-                borderRadius: 1
+            <DroneMap
+              drones={activeDeliveries.map(delivery => ({
+                id: delivery.droneId,
+                status: delivery.status,
+                currentLat: delivery.currentLat || 10.762622,
+                currentLng: delivery.currentLng || 106.660172,
+                batteryPct: 85, // Mock data
+                assignedOrderId: delivery.orderId,
+                customerAddress: delivery.customerAddress,
+                etaSeconds: delivery.etaSeconds
+              }))}
+              customerLocations={activeDeliveries.map(delivery => ({
+                orderId: delivery.orderId,
+                location: {
+                  lat: delivery.customerLat || 10.762622,
+                  lng: delivery.customerLng || 106.660172
+                },
+                customerName: delivery.customerName
+              }))}
+              stations={[
+                {
+                  id: 'station-1',
+                  name: 'Trạm Drone Quận 1',
+                  lat: 10.762622,
+                  lng: 106.660172,
+                  availableDrones: 3,
+                  totalDrones: 5,
+                  status: 'ACTIVE' as const
+                },
+                {
+                  id: 'station-2', 
+                  name: 'Trạm Drone Quận 3',
+                  lat: 10.786785,
+                  lng: 106.700806,
+                  availableDrones: 2,
+                  totalDrones: 4,
+                  status: 'ACTIVE' as const
+                }
+              ]}
+              height={500}
+              showRoutes={true}
+              onDroneClick={(droneId) => {
+                console.log('Drone clicked:', droneId);
               }}
-            >
-              <Typography color="text.secondary">
-                Map integration will be implemented here
-                <br />
-                (Google Maps, Leaflet, etc.)
-              </Typography>
-            </Box>
+              onStationClick={(stationId) => {
+                console.log('Station clicked:', stationId);
+              }}
+            />
           </Paper>
         </Grid>
       </Grid>
