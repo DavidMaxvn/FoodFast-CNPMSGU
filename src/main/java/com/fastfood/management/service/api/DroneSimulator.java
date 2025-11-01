@@ -42,4 +42,11 @@ public interface DroneSimulator {
      * @return true nếu còn segment tiếp theo, false nếu đã hoàn thành
      */
     boolean moveToNextSegment(Delivery delivery);
+    
+    /**
+     * Kiểm tra xem simulation có đang chạy cho delivery không
+     * @param deliveryId ID của delivery cần kiểm tra
+     * @return true nếu simulation đang chạy, false nếu không
+     */
+    boolean isSimulationRunning(Long deliveryId);
 }

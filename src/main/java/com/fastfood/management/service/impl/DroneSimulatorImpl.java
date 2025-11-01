@@ -10,6 +10,7 @@ import com.fastfood.management.repository.DeliveryRepository;
 import com.fastfood.management.repository.DroneRepository;
 import com.fastfood.management.repository.OrderRepository;
 import com.fastfood.management.service.api.DroneSimulator;
+import com.fastfood.management.service.api.DroneTrackingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -37,6 +38,7 @@ public class DroneSimulatorImpl implements DroneSimulator {
     private final OrderRepository orderRepository;
     private final DeliveryEventRepository eventRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final DroneTrackingService droneTrackingService;
     
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(10);
     private final Map<Long, ScheduledFuture<?>> activeSimulations = new ConcurrentHashMap<>();
@@ -301,6 +303,28 @@ public class DroneSimulatorImpl implements DroneSimulator {
     }
     
     private void sendGPSUpdate(Delivery delivery, double lat, double lng, int eta) {
+        // Cập nhật vị trí drone qua tracking service
+        droneTrackingService.updateDroneGps(
+            delivery.getDrone().getId(), 
+            lat, 
+            lng, 
+            delivery.getDrone().getBatteryPct()
+        );
+        
+        // Cập nhật tiến độ delivery
+        droneTrackingService.updateDeliveryProgress(
+            delivery.getId(),
+            delivery.getCurrentSegment(),
+            eta,
+            delivery.getStatus().toString()
+        );
+        
+        // Gửi ETA update nếu có thay đổi
+        if (delivery.getEtaSeconds() != eta) {
+            droneTrackingService.notifyDeliveryEtaUpdate(delivery.getId(), eta);
+        }
+        
+        // Vẫn giữ WebSocket cũ cho backward compatibility
         Map<String, Object> payload = Map.of(
             "eventType", "GPS_UPDATE",
             "deliveryId", delivery.getId(),
@@ -327,5 +351,11 @@ public class DroneSimulatorImpl implements DroneSimulator {
         );
         
         messagingTemplate.convertAndSend("/topic/delivery/" + delivery.getOrder().getId(), payload);
+    }
+    
+    @Override
+    public boolean isSimulationRunning(Long deliveryId) {
+        ScheduledFuture<?> future = activeSimulations.get(deliveryId);
+        return future != null && !future.isDone() && !future.isCancelled();
     }
 }

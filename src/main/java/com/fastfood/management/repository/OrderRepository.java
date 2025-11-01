@@ -1,6 +1,7 @@
 package com.fastfood.management.repository;
 
 import com.fastfood.management.entity.Order;
+import com.fastfood.management.entity.Store;
 import com.fastfood.management.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -14,6 +15,7 @@ import java.util.List;
 public interface OrderRepository extends JpaRepository<Order, Long> {
     Page<Order> findByCustomer(User customer, Pageable pageable);
     Page<Order> findByStatus(Order.OrderStatus status, Pageable pageable);
+    Page<Order> findByStoreAndStatus(Store store, Order.OrderStatus status, Pageable pageable);
     List<Order> findByStatusAndCreatedAtBefore(Order.OrderStatus status, LocalDateTime time);
     List<Order> findByCustomerAndCreatedAtBetween(User customer, LocalDateTime start, LocalDateTime end);
     List<Order> findByCustomerOrderByCreatedAtDesc(User customer);

@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/drone")
 @RequiredArgsConstructor
 @Slf4j
 @CrossOrigin(origins = "*")

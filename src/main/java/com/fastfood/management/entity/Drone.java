@@ -32,6 +32,9 @@ public class Drone {
     @Column(name = "max_payload_kg")
     private Double maxPayloadKg;
 
+    @Column(name = "max_range_km")
+    private Double maxRangeKm;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private DroneStatus status = DroneStatus.IDLE;
@@ -70,6 +73,13 @@ public class Drone {
         AT_STORE,             // Drone đang ở cửa hàng (pickup)
         EN_ROUTE_TO_CUSTOMER, // Drone đang bay đến khách hàng (W1→W2)
         ARRIVING,             // Drone đang tiếp cận khách hàng
-        RETURN_TO_BASE        // Drone đang quay về base (W2→W3)
+        RETURN_TO_BASE,       // Drone đang quay về base (W2→W3)
+        MAINTENANCE,          // Drone đang bảo trì
+        DELIVERING            // Drone đang giao hàng
+    }
+
+    // Custom getter for compatibility
+    public String getSerialNumber() {
+        return this.serial;
     }
 }

@@ -109,4 +109,22 @@ public class Delivery {
         COMPLETED,   // Hoàn thành giao hàng
         FAILED       // Thất bại
     }
+    
+    // Helper method to get waypoints as a list
+    public List<Double[]> getWaypoints() {
+        List<Double[]> waypoints = new ArrayList<>();
+        if (w0Lat != null && w0Lng != null) {
+            waypoints.add(new Double[]{w0Lat, w0Lng});
+        }
+        if (w1Lat != null && w1Lng != null) {
+            waypoints.add(new Double[]{w1Lat, w1Lng});
+        }
+        if (w2Lat != null && w2Lng != null) {
+            waypoints.add(new Double[]{w2Lat, w2Lng});
+        }
+        if (w3Lat != null && w3Lng != null) {
+            waypoints.add(new Double[]{w3Lat, w3Lng});
+        }
+        return waypoints;
+    }
 }
