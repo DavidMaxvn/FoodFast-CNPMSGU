@@ -56,6 +56,26 @@ public class FleetServiceImpl implements FleetService {
     }
     
     private DroneAssignment createAssignment(Order order, Drone drone, String assignedBy, DroneAssignment.AssignmentMode mode) {
+        // Validate required order data to avoid NPEs and invalid assignments
+        if (order == null) {
+            throw new IllegalStateException("Order is required for assignment");
+        }
+        if (order.getStore() == null) {
+            throw new IllegalStateException("Order store is missing; cannot compute pickup coordinates");
+        }
+        if (order.getAddress() == null) {
+            throw new IllegalStateException("Order address is missing; cannot compute destination coordinates");
+        }
+        if (order.getStore().getLatitude() == null || order.getStore().getLongitude() == null) {
+            throw new IllegalStateException("Store coordinates are missing (lat/lng); please set store lat/lng");
+        }
+        if (order.getAddress().getLatitude() == null || order.getAddress().getLongitude() == null) {
+            throw new IllegalStateException("Customer address coordinates are missing (lat/lng); please set address lat/lng");
+        }
+        if (drone == null) {
+            throw new IllegalStateException("Drone is required for assignment");
+        }
+
         // Cập nhật trạng thái drone
         drone.setStatus(Drone.DroneStatus.ASSIGNED);
         drone.setLastAssignedAt(LocalDateTime.now());
@@ -64,26 +84,31 @@ public class FleetServiceImpl implements FleetService {
         // Cập nhật trạng thái order
         order.setStatus(Order.OrderStatus.ASSIGNED);
         
-        // Tạo delivery record
-        Delivery delivery = Delivery.builder()
-                .order(order)
-                .drone(drone)
-                .status(Delivery.DeliveryStatus.ASSIGNED)
-                .w0Lat(drone.getCurrentLat())
-                .w0Lng(drone.getCurrentLng())
-                .w1Lat(order.getStore().getLatitude())
-                .w1Lng(order.getStore().getLongitude())
-                .w2Lat(order.getAddress().getLatitude())
-                .w2Lng(order.getAddress().getLongitude())
-                .w3Lat(drone.getHomeLat())
-                .w3Lng(drone.getHomeLng())
-                .currentSegment("W0_W1")
-                .segmentStartTime(LocalDateTime.now())
-                .etaSeconds(calculateInitialETA())
-                .build();
-        
+        // Tạo hoặc tái sử dụng delivery record để tránh vi phạm unique constraint (order_id)
+        Delivery delivery = order.getDelivery();
+        if (delivery == null) {
+            delivery = Delivery.builder()
+                    .order(order)
+                    .build();
+        }
+
+        delivery.setDrone(drone);
+        delivery.setStatus(Delivery.DeliveryStatus.ASSIGNED);
+        delivery.setW0Lat(drone.getCurrentLat());
+        delivery.setW0Lng(drone.getCurrentLng());
+        delivery.setW1Lat(order.getStore().getLatitude());
+        delivery.setW1Lng(order.getStore().getLongitude());
+        delivery.setW2Lat(order.getAddress().getLatitude());
+        delivery.setW2Lng(order.getAddress().getLongitude());
+        delivery.setW3Lat(drone.getHomeLat());
+        delivery.setW3Lng(drone.getHomeLng());
+        delivery.setCurrentSegment("W0_W1");
+        delivery.setSegmentStartTime(LocalDateTime.now());
+        delivery.setEtaSeconds(calculateInitialETA());
+
         delivery = deliveryRepository.save(delivery);
-        
+        order.setDelivery(delivery);
+
         // Tạo assignment record
         DroneAssignment assignment = DroneAssignment.builder()
                 .order(order)

@@ -36,7 +36,7 @@ public class Drone {
     private Double maxRangeKm;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 32)
     private DroneStatus status = DroneStatus.IDLE;
 
     @Column(name = "home_lat")
@@ -74,8 +74,7 @@ public class Drone {
         EN_ROUTE_TO_CUSTOMER, // Drone đang bay đến khách hàng (W1→W2)
         ARRIVING,             // Drone đang tiếp cận khách hàng
         RETURN_TO_BASE,       // Drone đang quay về base (W2→W3)
-        MAINTENANCE,          // Drone đang bảo trì
-        DELIVERING            // Drone đang giao hàng
+        MAINTENANCE           // Drone đang bảo trì
     }
 
     // Custom getter for compatibility

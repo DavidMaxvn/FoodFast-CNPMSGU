@@ -38,7 +38,7 @@ public class Delivery {
     private Drone drone;
     
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 32)
     private DeliveryStatus status;
     
     // Waypoints for POC simulation

@@ -6,10 +6,12 @@ import com.fastfood.management.entity.*;
 import com.fastfood.management.repository.*;
 import java.util.UUID;
 import com.fastfood.management.service.api.OrderService;
+import com.fastfood.management.service.api.FleetService;
 import com.fastfood.management.service.impl.WebSocketService;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
@@ -19,10 +21,12 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
@@ -32,9 +36,8 @@ public class OrderServiceImpl implements OrderService {
     private final OrderActivityRepository orderActivityRepository;
     private final PaymentRepository paymentRepository;
     private final DeliveryRepository deliveryRepository;
-    private final StoreStaffRepository storeStaffRepository;
-    private final StoreRepository storeRepository;
     private final WebSocketService webSocketService;
+    private final FleetService fleetService;
 
     @Override
     @Transactional
@@ -211,13 +214,23 @@ public class OrderServiceImpl implements OrderService {
                 .build();
         orderActivityRepository.save(activity);
 
-        // Tạo Delivery khi đơn chuyển sang READY_FOR_DELIVERY (nếu chưa có)
-        if (status == Order.OrderStatus.READY_FOR_DELIVERY && order.getDelivery() == null) {
-            insertDeliveryForOrder(order);
+        // Khi READY_FOR_DELIVERY: thử tự động gán drone. Nếu không có drone rảnh, tạo Delivery PENDING.
+        if (status == Order.OrderStatus.READY_FOR_DELIVERY) {
+            Optional<DroneAssignment> assignmentOpt = fleetService.autoAssignDrone(order);
+            if (assignmentOpt.isEmpty()) {
+                if (order.getDelivery() == null) {
+                    insertDeliveryForOrder(order);
+                }
+            }
         }
         
-        // Gửi WebSocket notification cho realtime order tracking
-        webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
+        // Gửi WebSocket notification cho realtime order tracking (trạng thái cuối cùng sau auto-assign nếu có)
+        try {
+            webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
+        } catch (Exception e) {
+            // Không để thất bại WebSocket làm hỏng luồng cập nhật trạng thái
+            log.warn("WebSocket send failed for order {}: {}", order.getId(), e.getMessage());
+        }
         
         return order;
     }
@@ -254,7 +267,11 @@ public class OrderServiceImpl implements OrderService {
         orderActivityRepository.save(activity);
         
         // Gửi WebSocket notification cho realtime order tracking
-        webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
+        try {
+            webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
+        } catch (Exception e) {
+            log.warn("WebSocket send failed for order {}: {}", order.getId(), e.getMessage());
+        }
     }
     
     @Override
@@ -298,44 +315,6 @@ public class OrderServiceImpl implements OrderService {
     public Page<OrderResponse> getOrdersByStatus(Order.OrderStatus status, Pageable pageable) {
         Page<Order> orders = orderRepository.findByStatus(status, pageable);
         return orders.map(this::mapOrderToResponse);
-    }
-
-    @Override
-    public Page<OrderResponse> getOrdersByStatusForUser(Order.OrderStatus status, User currentUser, Pageable pageable) {
-        // Check if user is ADMIN - they can see all orders
-        boolean isAdmin = hasSystemRole(currentUser, Role.ROLE_ADMIN);
-        if (isAdmin) {
-            return getOrdersByStatus(status, pageable);
-        }
-
-        // For MERCHANT/STAFF, get their assigned stores
-        List<StoreStaff> activeStaff = storeStaffRepository.findByUserIdAndStatus(currentUser.getId(), StoreStaff.StaffStatus.ACTIVE);
-        List<Store> managerStores = storeRepository.findByManager(currentUser);
-
-        // If user is not staff/manager of any store, return empty result
-        if (activeStaff.isEmpty() && managerStores.isEmpty()) {
-            return Page.empty(pageable);
-        }
-
-        // Collect all stores user has access to
-        List<Store> userStores = new java.util.ArrayList<>();
-        userStores.addAll(managerStores);
-        userStores.addAll(activeStaff.stream().map(StoreStaff::getStore).collect(Collectors.toList()));
-
-        // Remove duplicates
-        userStores = userStores.stream().distinct().collect(Collectors.toList());
-
-        // If user has access to multiple stores, we need to combine results
-        // For simplicity, let's filter by the first store for now
-        // In a real implementation, you might want to add a method to OrderRepository
-        // that can filter by multiple stores: findByStatusAndStoreIn(status, stores, pageable)
-        if (!userStores.isEmpty()) {
-            Store firstStore = userStores.get(0);
-            Page<Order> orders = orderRepository.findByStoreAndStatus(firstStore, status, pageable);
-            return orders.map(this::mapOrderToResponse);
-        }
-
-        return Page.empty(pageable);
     }
 
     // Helper methods

@@ -5,6 +5,7 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\ser
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\Address.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\OrderActivityRepository.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\DroneAssignmentResponse.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\mapper\OrderMapper.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\api\InventoryService.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\DeliveryRepository.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\OrderItemRepository.java
@@ -16,7 +17,6 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\ent
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\Store.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\config\DroneConfig.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\CategoryResponse.java
-C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\DroneSimulationController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\exception\ResourceNotFoundException.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\request\OrderRequest.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\config\WebSocketConfig.java
@@ -74,6 +74,7 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\repository\StoreRepository.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\DeliveryController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\websocket\DroneGpsUpdate.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\OrderCompactResponse.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\Payment.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\InventoryTransaction.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\PaymentValidationService.java

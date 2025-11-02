@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -149,7 +150,14 @@ public class DroneTrackingServiceImpl implements DroneTrackingService {
         try {
             // Lấy tất cả drone đang hoạt động
             List<Drone> activeDrones = droneRepository.findByStatusIn(
-                Arrays.asList(Drone.DroneStatus.IDLE, Drone.DroneStatus.ASSIGNED, Drone.DroneStatus.DELIVERING)
+                Arrays.asList(
+                    Drone.DroneStatus.ASSIGNED,
+                    Drone.DroneStatus.EN_ROUTE_TO_STORE,
+                    Drone.DroneStatus.AT_STORE,
+                    Drone.DroneStatus.EN_ROUTE_TO_CUSTOMER,
+                    Drone.DroneStatus.ARRIVING,
+                    Drone.DroneStatus.RETURN_TO_BASE
+                )
             );
             
             for (Drone drone : activeDrones) {
@@ -210,8 +218,10 @@ public class DroneTrackingServiceImpl implements DroneTrackingService {
             trackingInfo.put("batteryLevel", drone.getBatteryPct());
             trackingInfo.put("status", delivery.getStatus().toString());
             trackingInfo.put("currentSegment", delivery.getCurrentSegment());
-            trackingInfo.put("etaSeconds", delivery.getEtaSeconds());
-            trackingInfo.put("etaMinutes", Math.ceil(delivery.getEtaSeconds() / 60.0));
+            Integer etaSecondsVal = delivery.getEtaSeconds();
+            int etaSeconds = etaSecondsVal != null ? etaSecondsVal : 0;
+            trackingInfo.put("etaSeconds", etaSeconds);
+            trackingInfo.put("etaMinutes", Math.ceil(etaSeconds / 60.0));
             
             // Parse waypoints
             if (delivery.getWaypoints() != null) {
@@ -296,6 +306,6 @@ public class DroneTrackingServiceImpl implements DroneTrackingService {
     private List<Map<String, Double>> parseWaypoints(List<Double[]> waypoints) {
         return waypoints.stream()
             .map(waypoint -> Map.of("lat", waypoint[0], "lng", waypoint[1]))
-            .toList();
+            .collect(Collectors.toList());
     }
 }
