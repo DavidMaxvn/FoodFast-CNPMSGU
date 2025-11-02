@@ -665,11 +665,11 @@ const DroneManagement: React.FC = () => {
           }))}
           height={600}
           showRoutes={false}
-          onDroneClick={(droneId) => {
+          onDroneClick={(droneId: string) => {
             const drone = drones.find(d => d.id === droneId);
             if (drone) setSelectedDrone(drone);
           }}
-          onStationClick={(stationId) => {
+          onStationClick={(stationId: string) => {
             const station = stations.find(s => s.id === stationId);
             if (station) setSelectedStation(station);
           }}

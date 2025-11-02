@@ -66,12 +66,11 @@ import {
   Page, 
   OrderDTO,
   assignDroneToOrder,
-  getDeliveryTracking,
   completeDelivery,
   DroneAssignmentResponse,
   DeliveryTrackingResponse
 } from '../../services/order';
-import DeliveryTracking from '../../components/DeliveryTracking';
+// import DeliveryTracking from '../../components/DeliveryTracking';
 
 // Order status types
 type OrderStatus = 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
@@ -914,8 +913,8 @@ const OrderManagement: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Delivery Tracking Dialog */}
-      <Dialog open={trackingDialogOpen} onClose={() => setTrackingDialogOpen(false)} maxWidth="lg" fullWidth>
+      {/* Delivery Tracking Dialog - Ẩn cho demo vì chưa hoàn thiện */}
+      {/* <Dialog open={trackingDialogOpen} onClose={() => setTrackingDialogOpen(false)} maxWidth="lg" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography variant="h6">Theo dõi giao hàng - Đơn hàng #{selectedOrder?.id}</Typography>
@@ -937,7 +936,7 @@ const OrderManagement: React.FC = () => {
         <DialogActions>
           <Button onClick={() => setTrackingDialogOpen(false)}>Đóng</Button>
         </DialogActions>
-      </Dialog>
+      </Dialog> */}
     </Box>
   );
 };

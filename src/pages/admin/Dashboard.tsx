@@ -335,28 +335,15 @@ const Dashboard: React.FC = () => {
   };
 
   const getStatusLabel = (status: string): string => {
-    switch (status.toUpperCase()) {
-      case 'COMPLETED':
-      case 'DELIVERED':
-        return 'Hoàn thành';
-      case 'DELIVERING':
-      case 'OUT_FOR_DELIVERY':
-        return 'Đang giao';
-      case 'PREPARING':
-        return 'Đang chuẩn bị';
-      case 'READY':
-      case 'READY_FOR_DELIVERY':
-        return 'Sẵn sàng giao';
-      case 'CONFIRMED':
-        return 'Đã xác nhận';
-      case 'CREATED':
-        return 'Mới tạo';
-      case 'PENDING':
-        return 'Chờ xử lý';
-      case 'CANCELLED':
-      case 'REJECTED':
-      case 'FAILED':
-        return 'Đã hủy';
+    switch (status) {
+      case 'completed':
+        return 'Completed';
+      case 'delivering':
+        return 'Delivering';
+      case 'preparing':
+        return 'Preparing';
+      case 'pending':
+        return 'Pending';
       default:
         return status;
     }

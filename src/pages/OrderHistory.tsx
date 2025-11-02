@@ -1,26 +1,56 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Button, TablePagination, Stack } from '@mui/material';
+import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, Button, TablePagination, Stack, CircularProgress, Alert } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
-import { getMyOrders, OrderDTO, OrderVM } from '../services/order';
+import { listMyOrders, OrderVM } from '../services/order';
 
 const OrderHistory: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useSelector((state: RootState) => state.auth);
-  const [orders, setOrders] = useState<OrderDTO[]>([]);
+  const [orders, setOrders] = useState<OrderVM[]>([]);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Giữ đơn giản như phiên bản ban đầu
 
   useEffect(() => {
     if (user?.id) {
-      getMyOrders(user.id)
+      setLoading(true);
+      setError(null);
+      listMyOrders(user.id)
         .then((data) => {
           console.log("API Response Data:", data);
-          setOrders(data);
+          setOrders(Array.isArray(data) ? data : []);
         })
-        .catch((error) => {
-          console.error("Failed to fetch orders:", error);
+        .catch((error: any) => {
+          // Log chi tiết để chẩn đoán nhanh
+          const status = error?.response?.status;
+          const url = error?.config?.url;
+          const ct = error?.response?.headers?.['content-type'] || error?.response?.headers?.['Content-Type'];
+          let bodySnippet = '';
+          try {
+            const raw = error?.response?.data;
+            bodySnippet = typeof raw === 'string' ? raw.slice(0, 120) : JSON.stringify(raw)?.slice(0, 120);
+          } catch {}
+          console.error('Failed to fetch orders:', { status, url, contentType: ct, bodySnippet, error });
+
+          setOrders([]);
+
+          // Thông điệp người dùng rõ ràng hơn
+          if (error?.message === 'HTML_RESPONSE_NOT_JSON') {
+            setError('Máy chủ trả về HTML thay vì JSON. Vui lòng đăng nhập lại hoặc kiểm tra phiên làm việc.');
+          } else if (error?.message === 'INVALID_ORDER_LIST_FORMAT') {
+            setError('Định dạng dữ liệu đơn hàng không hợp lệ. Vui lòng thử lại sau.');
+          } else if (!error?.response) {
+            setError('Không thể kết nối tới máy chủ. Kiểm tra mạng hoặc server backend.');
+          } else {
+            setError(error?.response?.data?.message || `Lỗi tải đơn hàng (HTTP ${status}).`);
+          }
+        })
+        .finally(() => {
+          setLoading(false);
         });
     }
   }, [user]);
@@ -77,12 +107,24 @@ const OrderHistory: React.FC = () => {
     setPage(0);
   };
 
-  const pagedOrders = orders.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  const pagedOrders = safeOrders.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
   return (
     <Box>
       <Typography variant="h4" sx={{ mb: 2, fontWeight: 700 }}>Lịch sử đơn hàng</Typography>
 
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
       <Paper elevation={2} sx={{ p: 2, borderRadius: 2 }}>
         <TableContainer>
           <Table size="small">
@@ -97,8 +139,8 @@ const OrderHistory: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {pagedOrders.map((o) => {
-                const itemCount = o.orderItems?.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0) ?? 0;
+              {(Array.isArray(pagedOrders) ? pagedOrders : []).map((o) => {
+                const itemCount = o.items?.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0) ?? 0;
                 return (
                   <TableRow key={o.id} hover sx={{ '&:nth-of-type(odd)': { bgcolor: 'grey.50' } }}>
                     <TableCell>
@@ -112,7 +154,7 @@ const OrderHistory: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontWeight: 600, color: 'primary.main' }}>
-                        {formatCurrency(o.totalAmount)}
+                        {formatCurrency(o.total)}
                       </Typography>
                     </TableCell>
                     <TableCell>
@@ -143,7 +185,7 @@ const OrderHistory: React.FC = () => {
 
         <TablePagination
           component="div"
-          count={orders.length}
+          count={safeOrders.length}
           page={page}
           onPageChange={handleChangePage}
           rowsPerPage={rowsPerPage}
@@ -152,6 +194,7 @@ const OrderHistory: React.FC = () => {
           labelRowsPerPage="Hàng mỗi trang"
         />
       </Paper>
+      )}
     </Box>
   );
 };

@@ -42,6 +42,7 @@ import {
 import { RootState } from '../store';
 import TrackingMap from '../components/TrackingMap';
 import api from '../services/api';
+import { completeDelivery, completeDeliveryByDeliveryId } from '../services/order';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 // Order status steps
@@ -62,9 +63,12 @@ const backendToUIStatus: Record<string, StatusKey> = {
   CONFIRMED: 'confirmed',
   PREPARING: 'preparing',
   READY_FOR_DELIVERY: 'ready',
-  ASSIGNED: 'ready',
+  ASSIGNED: 'delivering',
   OUT_FOR_DELIVERY: 'delivering',
   DELIVERED: 'delivered',
+  COMPLETED: 'delivered',
+  REJECTED: 'confirmed',
+  CANCELLED: 'confirmed',
   // Fallbacks for early states
   PENDING_PAYMENT: 'created',
   PAID: 'confirmed',
@@ -174,6 +178,7 @@ interface OrderUI {
   total: number;
   deliveryFee: number;
   address: string;
+  storeAddress?: string;
   estimatedDelivery: string;
   paymentMethod: string;
   paymentStatus?: string;
@@ -187,6 +192,13 @@ const OrderTracking: React.FC = () => {
   const [order, setOrder] = useState<OrderUI | null>(null);
   const [activeStep, setActiveStep] = useState<number>(0);
   const [isArrivingSoon, setIsArrivingSoon] = useState(false);
+  const [droneLocation, setDroneLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [customerLocation, setCustomerLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [deliveryId, setDeliveryId] = useState<number | null>(null);
+  const [hasArrived, setHasArrived] = useState<boolean>(false);
+  const [confirming, setConfirming] = useState<boolean>(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -220,6 +232,7 @@ const OrderTracking: React.FC = () => {
       const statusRaw = (raw.status || '').toString().toUpperCase();
       const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
       
+      
       // Handle address properly - it might be a string or object
       let address = 'N/A';
       if (typeof raw.address === 'string') {
@@ -233,16 +246,31 @@ const OrderTracking: React.FC = () => {
           addr.city
         ].filter(Boolean).join(', ') || 'N/A';
       }
+      // Fallback nếu backend lưu snapshot text
+      if (address === 'N/A' && raw.addressSnapshot) {
+        address = String(raw.addressSnapshot);
+      }
+      
+      // Địa chỉ cửa hàng (nếu có từ backend)
+      let storeAddress: string | undefined = undefined;
+      const storeObj = (raw.store || raw.merchant || raw.vendor);
+      if (storeObj && typeof storeObj.address === 'string') {
+        storeAddress = storeObj.address;
+      } else if (typeof raw.storeAddress === 'string') {
+        storeAddress = raw.storeAddress;
+      } else if (typeof raw.restaurantAddress === 'string') {
+        storeAddress = raw.restaurantAddress;
+      }
       
       // Handle orderItems from API response
       const rawItems = raw.orderItems || raw.items || [];
       console.log('Raw items from API:', rawItems);
       const items: OrderItemUI[] = Array.isArray(rawItems) ? rawItems.map((it: any) => ({
         id: it.id || it.menuItemId || 'item',
-        name: it.menuItem?.name || it.name || 'Item',
+        name: it.menuItem?.name || it.name || it.nameSnapshot || 'Item',
         quantity: Number(it.quantity || 1),
         price: Number(it.unitPrice ?? it.menuItem?.price ?? it.price ?? 0),
-        image: it.menuItem?.imageUrl || it.image,
+        image: it.menuItem?.imageUrl || it.image || it.imageSnapshot,
       })) : [];
       console.log('Processed items from API:', items);
       
@@ -253,7 +281,8 @@ const OrderTracking: React.FC = () => {
         total: Number(raw.totalAmount ?? raw.total ?? 0),
         deliveryFee: 0,
         address,
-        estimatedDelivery: '30-45 minutes',
+        storeAddress,
+        estimatedDelivery: 'Đang tính...',
         paymentMethod: (raw.paymentMethod || '').toString(),
         paymentStatus: (raw.paymentStatus || '').toString(),
       };
@@ -262,6 +291,82 @@ const OrderTracking: React.FC = () => {
       setOrder(ui);
       setActiveStep(statusToStep[uiStatus]);
       setIsArrivingSoon(statusToStep[uiStatus] === 4);
+      // Lưu deliveryId nếu có
+      const initialDeliveryId = raw?.delivery?.id;
+      if (Number.isFinite(Number(initialDeliveryId))) {
+        setDeliveryId(Number(initialDeliveryId));
+      }
+
+      // Fetch delivery tracking for ETA và toạ độ bản đồ
+      try {
+        const trackTargetId = initialDeliveryId || orderId;
+        const trackRes = await api.get(`/deliveries/${trackTargetId}/track`);
+        const t = trackRes.data || {};
+        const deliveryStatusRaw = (t.deliveryStatus || '').toString().toUpperCase();
+        // Nếu backend báo delivery đang tiến hành thì force step 'delivering'
+        if (['ASSIGNED','IN_PROGRESS','OUT_FOR_DELIVERY'].includes(deliveryStatusRaw)) {
+          setActiveStep(statusToStep['delivering']);
+        }
+
+        // Update ETA if available
+        const eta = Number(t.estimatedMinutesRemaining);
+        if (!Number.isNaN(eta) && eta > 0) {
+          setOrder(prev => prev ? { ...prev, estimatedDelivery: `${eta} phút` } : prev);
+        }
+
+        // Helper: coordinate validity (exclude 0,0 and non-finite)
+        const isValidCoord = (lat?: number, lng?: number) => {
+          return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+        };
+
+        // Update map coordinates if available
+        // Hỗ trợ nhiều định dạng field từ backend (track/tracking)
+        const curLat = Number(t.currentLat ?? t?.tracking?.currentLat ?? t.currentLatitude);
+        const curLng = Number(t.currentLng ?? t?.tracking?.currentLng ?? t.currentLongitude);
+        const destLat = Number(t.destinationLat ?? t?.tracking?.destinationLat ?? t.destLat ?? t.destinationLatitude);
+        const destLng = Number(t.destinationLng ?? t?.tracking?.destinationLng ?? t.destLng ?? t.destinationLongitude);
+
+        if (isValidCoord(curLat, curLng)) {
+          setDroneLocation({ lat: curLat!, lng: curLng! });
+        }
+
+        if (isValidCoord(destLat, destLng)) {
+          setCustomerLocation({ lat: destLat!, lng: destLng! });
+        }
+        // Fallback: nếu track thiếu toạ độ, thử /deliveries/{deliveryId}/detail
+        const coordsMissing = !isValidCoord(curLat, curLng) || !isValidCoord(destLat, destLng);
+        const deliveryIdFromRaw = raw?.delivery?.id;
+        if ((coordsMissing || uiStatus === 'ready') && deliveryIdFromRaw) {
+          try {
+            const detailRes = await api.get(`/deliveries/${deliveryIdFromRaw}/detail`);
+            const d = detailRes.data || {};
+            const cp = d.currentPosition as number[] | undefined;
+            const waypoints = (d.waypoints || {}) as Record<string, number[]>;
+            const etaSec = Number(d.etaSec);
+
+            if (Array.isArray(cp) && cp.length === 2 && isValidCoord(cp[0], cp[1])) {
+              setDroneLocation({ lat: cp[0], lng: cp[1] });
+            }
+            const w0 = Array.isArray((waypoints as any).W0) ? (waypoints as any).W0 : undefined;
+            const w2 = Array.isArray(waypoints.W2) ? waypoints.W2 : undefined;
+            if (w2 && w2.length === 2 && isValidCoord(w2[0], w2[1])) {
+              setCustomerLocation({ lat: w2[0], lng: w2[1] });
+            }
+            // Nếu trạng thái READY, đặt drone tại vị trí cửa hàng (W0)
+            if (uiStatus === 'ready' && w0 && w0.length === 2 && isValidCoord(w0[0], w0[1])) {
+              setDroneLocation({ lat: w0[0], lng: w0[1] });
+            }
+            if (!Number.isNaN(etaSec) && etaSec > 0) {
+              const etaMin = Math.round(etaSec / 60);
+              setOrder(prev => prev ? { ...prev, estimatedDelivery: `${etaMin} phút` } : prev);
+            }
+          } catch (detailErr) {
+            console.warn('Fallback detail fetch failed:', detailErr);
+          }
+        }
+      } catch (e) {
+        // ignore tracking errors for now
+      }
       
       // Save to localStorage for future use
       localStorage.setItem('currentOrder', JSON.stringify(raw));
@@ -272,6 +377,40 @@ const OrderTracking: React.FC = () => {
       throw err;
     }
   };
+
+  // Poll tracking while delivering to keep ETA/map fresh
+  useEffect(() => {
+    if (!id) return;
+    if (activeStep !== 4) return; // only when Drone đang giao
+
+    let timer: any = null;
+    const tick = async () => {
+      try {
+        const trackRes = await api.get(`/deliveries/${id}/track`);
+        const t = trackRes.data || {};
+        const eta = Number(t.estimatedMinutesRemaining);
+        if (!Number.isNaN(eta) && eta >= 0) {
+          setOrder(prev => prev ? { ...prev, estimatedDelivery: eta > 0 ? `${eta} phút` : 'Sắp đến nơi' } : prev);
+          setIsArrivingSoon(eta > 0 && eta <= 5);
+        }
+        const curLat = Number(t.currentLat);
+        const curLng = Number(t.currentLng);
+        const destLat = Number(t.destinationLat);
+        const destLng = Number(t.destinationLng);
+        if (!Number.isNaN(curLat) && !Number.isNaN(curLng)) {
+          setDroneLocation({ lat: curLat, lng: curLng });
+        }
+        if (!Number.isNaN(destLat) && !Number.isNaN(destLng)) {
+          setCustomerLocation({ lat: destLat, lng: destLng });
+        }
+      } catch {}
+    };
+
+    // Immediate fetch then interval
+    tick();
+    timer = setInterval(tick, 10000);
+    return () => timer && clearInterval(timer);
+  }, [id, activeStep]);
 
   useEffect(() => {
     const loadOrder = async () => {
@@ -340,10 +479,15 @@ const OrderTracking: React.FC = () => {
               total: Number(raw.totalAmount ?? raw.total ?? 0),
               deliveryFee: 0,
               address,
+              storeAddress: (raw.storeAddress || raw.restaurantAddress),
               estimatedDelivery: '30-45 minutes',
               paymentMethod: (raw.paymentMethod || '').toString(),
               paymentStatus: (raw.paymentStatus || '').toString(),
             };
+            const dId = raw?.delivery?.id;
+            if (Number.isFinite(Number(dId))) {
+              setDeliveryId(Number(dId));
+            }
 
             console.log('Final UI order from localStorage:', ui);
             setOrder(ui);
@@ -391,6 +535,7 @@ const OrderTracking: React.FC = () => {
           setOrder((prev) => prev ? { ...prev, status: uiStatus } : prev);
           setActiveStep(statusToStep[uiStatus]);
           setIsArrivingSoon(statusToStep[uiStatus] === 4);
+          
         } else if (type === 'DELIVERY_ARRIVING') {
           console.log('Delivery arriving notification received');
           setIsArrivingSoon(true);
@@ -431,35 +576,73 @@ const OrderTracking: React.FC = () => {
   }
 
   if (error) {
+    // Luôn hiển thị bản đồ ngay cả khi có lỗi tải dữ liệu
     return (
-      <Container maxWidth="md" sx={{ py: 4 }}>
-        <ErrorAlert severity="error">
-          <AlertTitle>Lỗi tải dữ liệu</AlertTitle>
-          {error}
-          <RetryButton 
-            variant="outlined" 
-            color="error" 
-            size="small"
-            onClick={() => window.location.reload()}
-          >
-            Thử lại
-          </RetryButton>
-        </ErrorAlert>
-        
-        {!userId && (
-          <Box mt={2}>
-            <Alert severity="info">
-              <AlertTitle>Gợi ý</AlertTitle>
-              Bạn có thể <Link href="/login">đăng nhập</Link> để tải dữ liệu đơn hàng từ server.
-            </Alert>
+      <Box sx={{ py: 4 }}>
+        <Typography variant="h4" component="h1" gutterBottom>
+          Theo Dõi Đơn Hàng
+        </Typography>
+        <Paper
+          sx={{
+            p: 3,
+            mb: 3,
+            borderRadius: 2,
+            boxShadow: 3,
+          }}
+        >
+          <Box sx={{ height: 400, borderRadius: 2, overflow: 'hidden', mb: 2, boxShadow: 2 }}>
+            <TrackingMap height={400} orderId={id ? String(id) : undefined} />
           </Box>
-        )}
-      </Container>
+          <ErrorAlert severity="warning">
+            <AlertTitle>Lỗi tải dữ liệu</AlertTitle>
+            {error}
+            <RetryButton 
+              variant="outlined" 
+              color="warning" 
+              size="small"
+              onClick={() => window.location.reload()}
+            >
+              Thử lại
+            </RetryButton>
+          </ErrorAlert>
+          {!userId && (
+            <Box mt={2}>
+              <Alert severity="info">
+                <AlertTitle>Gợi ý</AlertTitle>
+                Bạn có thể <Link href="/login">đăng nhập</Link> để tải dữ liệu đơn hàng từ server.
+              </Alert>
+            </Box>
+          )}
+        </Paper>
+      </Box>
     );
   }
 
   if (!order) {
-    return null;
+    // Fallback: hiển thị bản đồ và thông báo khi chưa tải được chi tiết đơn
+    return (
+      <Box sx={{ py: 4 }}>
+        <Typography variant="h4" component="h1" gutterBottom>
+          Theo Dõi Đơn Hàng
+        </Typography>
+        <Paper
+          sx={{
+            p: 3,
+            mb: 3,
+            borderRadius: 2,
+            boxShadow: 3,
+          }}
+        >
+          <Box sx={{ height: 400, borderRadius: 2, overflow: 'hidden', mb: 2, boxShadow: 2 }}>
+            <TrackingMap height={400} orderId={id ? String(id) : undefined} />
+          </Box>
+          <Alert severity="info">
+            <AlertTitle>Đang tải dữ liệu đơn hàng</AlertTitle>
+            Chưa tải được chi tiết đơn hàng, đang hiển thị bản đồ demo để bạn theo dõi tuyến.
+          </Alert>
+        </Paper>
+      </Box>
+    );
   }
 
   return (
@@ -483,14 +666,7 @@ const OrderTracking: React.FC = () => {
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
                 Trạng Thái Đơn Hàng
               </Typography>
-              {isConnected && (
-                <Chip 
-                  label=" Kết nối trực tiếp" 
-                  color="success" 
-                  size="small"
-                  sx={{ fontSize: '0.75rem' }}
-                />
-              )}
+              
               {isArrivingSoon && (
                 <Chip 
                   label=" Sắp tới!" 
@@ -541,11 +717,65 @@ const OrderTracking: React.FC = () => {
               <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center' }}>
                  Địa chỉ giao hàng: <strong style={{ marginLeft: 8 }}>{order.address}</strong>
               </Typography>
+              <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center' }}>
+                 Địa chỉ cửa hàng: <strong style={{ marginLeft: 8 }}>{order.storeAddress || '-'}</strong>
+              </Typography>
             </Box>
             
-            <Box sx={{ height: 400, borderRadius: 2, overflow: 'hidden', mb: 2, boxShadow: 2 }}>
-              <TrackingMap height={400} orderId={String(order.id)} />
-            </Box>
+            {(order.status === 'ready' || order.status === 'delivering') && (
+              <>
+                <Box sx={{ height: 400, borderRadius: 2, overflow: 'hidden', mb: 2, boxShadow: 2 }}>
+                  <TrackingMap
+                    height={400}
+                    orderId={String(order.id)}
+                    droneLocation={droneLocation || undefined}
+                    customerLocation={customerLocation || undefined}
+                    onArrived={() => {
+                      setHasArrived(true);
+                      setIsArrivingSoon(false);
+                    }}
+                  />
+                </Box>
+                {hasArrived && activeStep === 4 && (
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Box>
+                        <AlertTitle>Drone đã tới điểm giao (W2)</AlertTitle>
+                        Vui lòng xác nhận đã nhận hàng để hoàn tất đơn.
+                      </Box>
+                      <Button 
+                        variant="contained" 
+                        color="success" 
+                        disabled={confirming}
+                        onClick={async () => {
+                          if (!order) return;
+                          setConfirming(true);
+                          setConfirmError(null);
+                          try {
+                            if (deliveryId && Number.isFinite(Number(deliveryId))) {
+                              await completeDeliveryByDeliveryId(Number(deliveryId));
+                            } else {
+                              // Fallback nếu không có deliveryId: thử theo orderId (có thể fail nếu backend không hỗ trợ)
+                              await completeDelivery(Number(order.id));
+                            }
+                            setActiveStep(5);
+                          } catch (e: any) {
+                            setConfirmError(e?.response?.data?.message || 'Xác nhận thất bại, vui lòng thử lại');
+                          } finally {
+                            setConfirming(false);
+                          }
+                        }}
+                      >
+                        Tôi xác nhận đã nhận hàng
+                      </Button>
+                    </Box>
+                    {confirmError && (
+                      <Typography variant="caption" color="error">{confirmError}</Typography>
+                    )}
+                  </Alert>
+                )}
+              </>
+            )}
           </Paper>
           
           <Paper sx={{ p: 3, borderRadius: 2 }}>

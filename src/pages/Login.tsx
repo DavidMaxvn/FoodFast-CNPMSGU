@@ -65,9 +65,9 @@ const Login: React.FC = () => {
     },
     validationSchema: Yup.object({
       email: Yup.string()
-        .email('Địa chỉ email không hợp lệ')
-        .required('Email là bắt buộc'),
-      password: Yup.string().required('Mật khẩu là bắt buộc'),
+        .email('Invalid email address')
+        .required('Email is required'),
+      password: Yup.string().required('Password is required'),
     }),
     onSubmit: async (values) => {
       dispatch(loginStart());
@@ -105,7 +105,7 @@ const Login: React.FC = () => {
           }}
         >
           <Typography variant="h5" component="h1" gutterBottom align="center">
-            Đăng nhập
+            Login
           </Typography>
 
           <form onSubmit={formik.handleSubmit}>
@@ -127,7 +127,7 @@ const Login: React.FC = () => {
               fullWidth
               id="password"
               name="password"
-              label="Mật khẩu"
+              label="Password"
               type="password"
               variant="outlined"
               margin="normal"
@@ -147,14 +147,14 @@ const Login: React.FC = () => {
               disabled={isLoading}
               sx={{ mt: 3, mb: 2 }}
             >
-              {isLoading ? <CircularProgress size={24} /> : 'Đăng nhập'}
+              {isLoading ? <CircularProgress size={24} /> : 'Login'}
             </Button>
 
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="body2">
-                Chưa có tài khoản?{' '}
+                Don't have an account?{' '}
                 <Link component={RouterLink} to="/register">
-                  Đăng ký tại đây
+                  Register here
                 </Link>
               </Typography>
             </Box>

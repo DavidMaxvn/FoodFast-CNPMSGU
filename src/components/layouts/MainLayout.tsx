@@ -54,7 +54,7 @@ const MainLayout: React.FC = () => {
               onClick={() => navigate('/stores')}
               sx={{ mr: 2 }}
             >
-              Cửa hàng
+              Stores
             </Button>
            
             {isAuthenticated && (
@@ -64,14 +64,14 @@ const MainLayout: React.FC = () => {
                   onClick={() => navigate('/orders/history')}
                   sx={{ mr: 2 }}
                 >
-                  Đơn hàng
+                  Orders
                 </Button>
                 <Button 
                   color="inherit" 
                   onClick={() => navigate('/notifications')}
                   sx={{ mr: 2 }}
                 >
-                  Thông báo
+                  Notifications
                 </Button>
               </>
             )}
@@ -102,8 +102,8 @@ const MainLayout: React.FC = () => {
                   anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                   transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                 >
-                  <MenuItem onClick={handleProfile}>Hồ sơ</MenuItem>
-                  <MenuItem onClick={handleLogout}>Đăng xuất</MenuItem>
+                  <MenuItem onClick={handleProfile}>Profile</MenuItem>
+                  <MenuItem onClick={handleLogout}>Logout</MenuItem>
                 </Menu>
               </>
             ) : (
@@ -111,7 +111,7 @@ const MainLayout: React.FC = () => {
                 color="inherit"
                 onClick={() => navigate('/login')}
               >
-                Đăng nhập
+                Login
               </Button>
             )}
           </Box>

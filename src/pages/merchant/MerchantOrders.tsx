@@ -24,7 +24,7 @@ import {
 } from '@mui/material';
 import { Search, Visibility, CheckCircle, LocalShipping, Restaurant, Cancel } from '@mui/icons-material';
 import { useMerchantSession } from '../../store/merchantSession';
-import { getOrdersByStatus, updateOrderStatus, getOrderById, OrderResponse, Page, OrderDTO } from '../../services/order';
+import { getOrdersByStatus, updateOrderStatus, getOrderById, assignDroneToOrder, OrderResponse, Page, OrderDTO } from '../../services/order';
 
 // Order status types aligned with backend
 type OrderStatus = 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
@@ -148,8 +148,25 @@ const MerchantOrders: React.FC = () => {
     if (!target) return;
     try {
       await updateOrderStatus(o.id, target);
-      const uiKey = backendToUIStatus[target];
-      setSuccessMessage(`Đơn #${o.id} đã chuyển sang "${statusConfig[uiKey].label}"`);
+
+      // Nếu chuyển sang READY_FOR_DELIVERY, gọi auto-assign drone để phản hồi tức thì trên UI
+      if (target === 'READY_FOR_DELIVERY') {
+        try {
+          const result = await assignDroneToOrder(o.id);
+          if (result?.droneId) {
+            setSuccessMessage(`Đơn #${o.id} đã sẵn sàng và gán drone #${result.droneId}`);
+          } else {
+            const uiKey = backendToUIStatus[target];
+            setSuccessMessage(`Đơn #${o.id} đã chuyển sang "${statusConfig[uiKey].label}". Không có drone rảnh, sẽ gán sau.`);
+          }
+        } catch (err: any) {
+          const uiKey = backendToUIStatus[target];
+          setSuccessMessage(`Đơn #${o.id} đã chuyển sang "${statusConfig[uiKey].label}". Lỗi gán drone: ${err?.response?.data?.message || 'Không thể gán drone'}`);
+        }
+      } else {
+        const uiKey = backendToUIStatus[target];
+        setSuccessMessage(`Đơn #${o.id} đã chuyển sang "${statusConfig[uiKey].label}"`);
+      }
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
       fetchData();

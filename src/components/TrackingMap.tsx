@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
-import { Box, Typography, CircularProgress, Alert } from '@mui/material';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, Pane } from 'react-leaflet';
+import { Box, Typography, CircularProgress, Alert, Button } from '@mui/material';
+import { GpsFixed } from '@mui/icons-material';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -37,6 +38,7 @@ interface TrackingMapProps {
   customerLocation?: LocationPoint;
   droneLocation?: LocationPoint;
   height?: number;
+  onArrived?: () => void; // gọi khi drone tới W2
 }
 
 // OSRM API service
@@ -71,22 +73,56 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
   orderId,
   customerLocation,
   droneLocation,
-  height = 400
+  height = 400,
+  onArrived
 }) => {
   const [routeCoordinates, setRouteCoordinates] = useState<LocationPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(true);
+  const mapRef = useRef<L.Map | null>(null);
+  const [tileSource, setTileSource] = useState<'osm' | 'carto'>('osm');
+  const [isUserInteracting, setIsUserInteracting] = useState(false);
+  const interactionTimeoutRef = useRef<number | null>(null);
+  const [followDrone, setFollowDrone] = useState<boolean>(false);
 
-  // Default locations for demo (Ho Chi Minh City area)
+  // Keep map sized correctly on window resize
+  useEffect(() => {
+    const onResize = () => {
+      const map = mapRef.current;
+      if (map) {
+        try { map.invalidateSize(); } catch {}
+      }
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Helper to validate point (exclude 0,0 and non-finite)
+  const isValidPoint = (p?: LocationPoint | null): boolean => {
+    if (!p) return false;
+    const { lat, lng } = p;
+    return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+  };
+
+  // Demo defaults (Ho Chi Minh City area)
+  const demoCustomer: LocationPoint = { lat: 10.8231, lng: 106.6297 };
+  const demoDrone: LocationPoint = { lat: 10.8331, lng: 106.6197 };
+  // Demo store (Quận 1, HCMC)
+  const demoStore: LocationPoint = { lat: 10.7761, lng: 106.7000 };
+
+  // Safe locations: prefer valid props, fallback to demo
   const defaultCustomer: LocationPoint = useMemo(
-    () => customerLocation || { lat: 10.8231, lng: 106.6297 },
+    () => (isValidPoint(customerLocation) ? (customerLocation as LocationPoint) : demoCustomer),
     [customerLocation]
   );
   const defaultDrone: LocationPoint = useMemo(
-    () => droneLocation || { lat: 10.8331, lng: 106.6197 },
+    () => (isValidPoint(droneLocation) ? (droneLocation as LocationPoint) : demoDrone),
     [droneLocation]
   );
+
+  // Mục tiêu W2 (khách hàng) thay vì cửa hàng
+  const targetLocation: LocationPoint = defaultCustomer;
 
   // Calculate distance between drone and customer
   const calculateDistance = (point1: LocationPoint, point2: LocationPoint): number => {
@@ -102,42 +138,127 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
 
   const [estimatedTime, setEstimatedTime] = useState<number>(0);
   const [routeDistance, setRouteDistance] = useState<number>(0);
+  const [hasArrived, setHasArrived] = useState<boolean>(false);
+  const notifiedArrivedRef = useRef<boolean>(false);
+  const [isMoving, setIsMoving] = useState<boolean>(false);
 
   // Simulate drone movement for demo
   const [currentDroneLocation, setCurrentDroneLocation] = useState<LocationPoint>(defaultDrone);
 
-  useEffect(() => {
-    // Simulate drone movement every 3 seconds
-    const interval = setInterval(() => {
-      if (isMounted) {
-        setCurrentDroneLocation(prev => ({
-          lat: prev.lat + (Math.random() - 0.5) * 0.001,
-          lng: prev.lng + (Math.random() - 0.5) * 0.001
-        }));
-      }
-    }, 3000);
+  // Create simple text labels for waypoints (W0 for drone, W2 for customer)
+  const w0LabelIcon = useMemo(() => new L.DivIcon({
+    html: '<div style="background:#1976d2;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;border:1px solid #0d47a1">W0</div>',
+    className: 'w0-label',
+    iconSize: [24, 24],
+    iconAnchor: [12, -8]
+  }), []);
 
-    return () => {
-      clearInterval(interval);
-    };
-  }, [isMounted]);
+  const w2LabelIcon = useMemo(() => new L.DivIcon({
+    html: '<div style="background:#4caf50;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;border:1px solid #2e7d32">W2</div>',
+    className: 'w2-label',
+    iconSize: [24, 24],
+    iconAnchor: [12, -8]
+  }), []);
+
+  useEffect(() => {
+    // Nếu bật mô phỏng, luôn chạy mô phỏng bất kể có tọa độ thật hay không
+    if (isMoving && !hasArrived) {
+      const interval = setInterval(() => {
+        if (!isMounted) return;
+        setCurrentDroneLocation(prev => {
+          const distanceKm = calculateDistance(prev, targetLocation);
+          // Nếu gần tới đích (~20m) thì dừng dịch chuyển và tắt isMoving
+          if (distanceKm <= 0.02) {
+            setIsMoving(false);
+            return prev;
+          }
+          const stepKm = 0.05; // ~50m mỗi lần cập nhật
+          const frac = Math.min(1, stepKm / Math.max(distanceKm, 1e-6));
+          return {
+            lat: prev.lat + (targetLocation.lat - prev.lat) * frac,
+            lng: prev.lng + (targetLocation.lng - prev.lng) * frac,
+          };
+        });
+      }, 3000);
+
+      return () => {
+        clearInterval(interval);
+      };
+    }
+
+    // Nếu không mô phỏng, ưu tiên dùng tọa độ thật nếu hợp lệ
+    if (droneLocation) {
+      if (isValidPoint(droneLocation)) {
+        setCurrentDroneLocation(droneLocation);
+        return;
+      }
+      // Tọa độ prop không hợp lệ: đặt về điểm demo
+      setCurrentDroneLocation(defaultDrone);
+    }
+  }, [isMounted, droneLocation, targetLocation, isMoving, hasArrived]);
+
+  // Tự động bật theo dõi khi bắt đầu di chuyển để camera bám drone
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (isMoving) {
+      setFollowDrone(true);
+      try {
+        const map = mapRef.current;
+        const minZoom = 14;
+        const nextZoom = Math.max(map!.getZoom(), minZoom);
+        map!.setView([currentDroneLocation.lat, currentDroneLocation.lng], nextZoom, { animate: true });
+      } catch {}
+    }
+  }, [isMoving]);
 
   useEffect(() => {
     // Get route when locations are available
     const fetchRoute = async () => {
-      if (currentDroneLocation && defaultCustomer && isMounted) {
+      if (currentDroneLocation && targetLocation && isMounted) {
         setLoading(true);
         setError(null);
         
         try {
-          const route = await getRoute(currentDroneLocation, defaultCustomer);
+          // Guard against invalid coordinates (0,0) or NaN
+          if (!isValidPoint(currentDroneLocation) || !isValidPoint(targetLocation)) {
+            // Fallback: draw straight line using safe demo points
+            const start = isValidPoint(currentDroneLocation) ? currentDroneLocation : demoDrone;
+            const end = isValidPoint(targetLocation) ? targetLocation : demoStore;
+            setRouteCoordinates([start, end]);
+            const distance = calculateDistance(currentDroneLocation, targetLocation);
+            setRouteDistance(distance);
+            const droneSpeed = 30; // km/h
+            const timeInMinutes = Math.ceil((distance / droneSpeed) * 60);
+            setEstimatedTime(timeInMinutes);
+            setError('Tọa độ không hợp lệ cho routing (đang hiển thị tuyến thẳng)');
+            setLoading(false);
+            return;
+          }
+
+          // If start and destination are practically the same (<=50m), treat as arrived
+          const distanceNow = calculateDistance(currentDroneLocation, targetLocation);
+          if (distanceNow <= 0.05) { // ~50 meters
+            setRouteCoordinates([]); // no polyline needed
+            setRouteDistance(distanceNow);
+            setEstimatedTime(0);
+            setError(null);
+            setLoading(false);
+            setHasArrived(true);
+            if (!notifiedArrivedRef.current) {
+              notifiedArrivedRef.current = true;
+              try { onArrived && onArrived(); } catch {}
+            }
+            return;
+          }
+
+          const route = await getRoute(currentDroneLocation, targetLocation);
           
           if (isMounted) {
             if (route) {
               setRouteCoordinates(route);
               
               // Calculate route distance and estimated time
-              const distance = calculateDistance(currentDroneLocation, defaultCustomer);
+              const distance = distanceNow;
               setRouteDistance(distance);
               
               // Estimate delivery time (assuming drone speed of 30 km/h)
@@ -146,13 +267,28 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
               const timeInMinutes = Math.ceil(timeInHours * 60);
               setEstimatedTime(timeInMinutes);
             } else {
-              setError('Không thể tải route từ OSRM API');
+              // Fallback: draw straight line
+              setRouteCoordinates([currentDroneLocation, targetLocation]);
+              const distance = distanceNow;
+              setRouteDistance(distance);
+              const droneSpeed = 30; // km/h
+              const timeInMinutes = Math.ceil((distance / droneSpeed) * 60);
+              setEstimatedTime(timeInMinutes);
+              setError('Không thể tải route từ OSRM API (đang hiển thị tuyến thẳng)');
             }
             setLoading(false);
           }
         } catch (err) {
+          const distanceNow = calculateDistance(currentDroneLocation, targetLocation);
           if (isMounted) {
-            setError('Không thể tải route từ OSRM API');
+            // Fallback: draw straight line
+            setRouteCoordinates([currentDroneLocation, targetLocation]);
+            const distance = distanceNow;
+            setRouteDistance(distance);
+            const droneSpeed = 30; // km/h
+            const timeInMinutes = Math.ceil((distance / droneSpeed) * 60);
+            setEstimatedTime(timeInMinutes);
+            setError('Không thể tải route từ OSRM API (đang hiển thị tuyến thẳng)');
             setLoading(false);
           }
         }
@@ -160,7 +296,7 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
     };
 
     fetchRoute();
-  }, [currentDroneLocation, defaultCustomer, isMounted, calculateDistance]);
+  }, [currentDroneLocation, targetLocation, isMounted]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -172,14 +308,44 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
   // Calculate map center
   const mapCenter: LocationPoint = useMemo(
     () => ({
-      lat: (currentDroneLocation.lat + defaultCustomer.lat) / 2,
-      lng: (currentDroneLocation.lng + defaultCustomer.lng) / 2
+      lat: (currentDroneLocation.lat + targetLocation.lat) / 2,
+      lng: (currentDroneLocation.lng + targetLocation.lng) / 2
     }),
-    [currentDroneLocation, defaultCustomer]
+    [currentDroneLocation, targetLocation]
   );
+  // Theo dõi drone: chỉ pan khi người dùng bật Follow và không đang tương tác
+  const lastDroneRef = useRef<LocationPoint>(currentDroneLocation);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!followDrone) return;
+    if (isUserInteracting) return;
+    try {
+      // Chỉ pan khi toạ độ hợp lệ, tránh pan tới (0,0) hoặc NaN gây map trống
+      const isValid = isValidPoint(currentDroneLocation);
+      const safeTarget: LocationPoint = isValid
+        ? currentDroneLocation
+        : (isValidPoint(targetLocation) ? targetLocation : demoStore);
+
+      const prev = lastDroneRef.current;
+      const deltaKm = calculateDistance(prev, safeTarget);
+      if (deltaKm > 0.05) { // ~50m để tránh pan liên tục
+        const minZoom = 14;
+        const nextZoom = Math.max(map.getZoom(), minZoom);
+        // Dùng setView để đồng bộ zoom tối thiểu, animate nhẹ
+        map.setView([safeTarget.lat, safeTarget.lng], nextZoom, { animate: true });
+        lastDroneRef.current = safeTarget;
+      }
+    } catch {}
+  }, [currentDroneLocation, followDrone, isUserInteracting, targetLocation]);
 
   return (
     <Box sx={{ position: 'relative', height, width: '100%' }}>
+      {hasArrived && (
+        <Box sx={{ position: 'absolute', top: 10, left: 10, zIndex: 1100 }}>
+          <Alert severity="success" variant="filled">🚚 Drone đã đến điểm giao (W2)</Alert>
+        </Box>
+      )}
       {loading && (
         <Box
           sx={{
@@ -200,6 +366,34 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
         </Box>
       )}
 
+      {/* Toggle theo dõi drone để tránh nhảy map ngoài ý muốn */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 10,
+          right: loading ? 240 : 10,
+          zIndex: 1000,
+        }}
+      >
+        <Button 
+          size="small"
+          variant={followDrone ? 'contained' : 'outlined'}
+          startIcon={<GpsFixed />}
+          onClick={() => setFollowDrone(v => !v)}
+        >
+          {followDrone ? 'Đang theo dõi Drone' : 'Theo dõi Drone'}
+        </Button>
+        <Button 
+          size="small"
+          sx={{ ml: 1 }}
+          variant={isMoving ? 'contained' : 'outlined'}
+          color={isMoving ? 'warning' : 'primary'}
+          onClick={() => setIsMoving(v => !v)}
+        >
+          {isMoving ? 'Tạm dừng di chuyển' : 'Bắt đầu di chuyển'}
+        </Button>
+      </Box>
+
       {error && (
         <Box sx={{ position: 'absolute', top: 10, left: 10, right: 10, zIndex: 1000 }}>
           <Alert severity="warning" variant="filled">
@@ -208,71 +402,148 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
         </Box>
       )}
 
-      {isMounted && (
-        <MapContainer
-          center={mapCenter}
-          zoom={14}
-          style={{ height: '100%', width: '100%' }}
-          key={`map-${orderId || 'default'}`} // Force remount when orderId changes
-        >
-          {/* OpenStreetMap Tile Layer - MIỄN PHÍ */}
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          />
+      <MapContainer
+        center={mapCenter}
+        zoom={14}
+        style={{ height: '100%', width: '100%' }}
+        key={`map-${orderId || 'default'}`} // Force remount when orderId changes
+        ref={mapRef}
+        whenReady={() => {
+          try {
+            const map = mapRef.current;
+            if (map) {
+              setTimeout(() => { try { map.invalidateSize(); } catch {} }, 150);
+              setTimeout(() => { try { map.invalidateSize(); } catch {} }, 400);
 
-          {/* Drone Marker */}
-          <Marker position={currentDroneLocation} icon={droneIcon}>
-            <Popup>
-              <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#1976d2' }}>
-                   Drone Giao Hàng
-                </Typography>
-                <Typography variant="caption" display="block">
-                  Đơn hàng: #{orderId || 'DEMO'}
-                </Typography>
-                <Typography variant="caption" display="block">
-                  Khoảng cách còn lại: {routeDistance > 0 ? `${routeDistance.toFixed(2)} km` : 'Đang tính...'}
-                </Typography>
-                <Typography variant="caption" display="block">
-                  Thời gian dự kiến: {estimatedTime > 0 ? `${estimatedTime} phút` : 'Đang tính...'}
-                </Typography>
-                <Typography variant="caption" display="block" sx={{ color: '#666' }}>
-                  GPS: {currentDroneLocation.lat.toFixed(4)}, {currentDroneLocation.lng.toFixed(4)}
-                </Typography>
-              </Box>
-            </Popup>
-          </Marker>
-
-          {/* Customer Marker */}
-          <Marker position={defaultCustomer} icon={customerIcon}>
-            <Popup>
-              <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#4caf50' }}>
-                   Địa Chỉ Giao Hàng
-                </Typography>
-                <Typography variant="caption" display="block">
-                  Khách hàng đang chờ nhận hàng
-                </Typography>
-                <Typography variant="caption" display="block" sx={{ color: '#666' }}>
-                  GPS: {defaultCustomer.lat.toFixed(4)}, {defaultCustomer.lng.toFixed(4)}
-                </Typography>
-              </Box>
-            </Popup>
-          </Marker>
-
-          {/* Route Polyline */}
-          {routeCoordinates.length > 0 && (
-            <Polyline
-              positions={routeCoordinates}
-              color="#ff5722"
-              weight={5}
-              opacity={0.8}
-              dashArray="10, 5"
+              // Theo dõi tương tác để không tự recenter khi người dùng zoom/drag
+              map.on('zoomstart movestart dragstart', () => {
+                setIsUserInteracting(true);
+                if (interactionTimeoutRef.current) {
+                  window.clearTimeout(interactionTimeoutRef.current);
+                }
+              });
+              const endInteraction = () => {
+                if (interactionTimeoutRef.current) {
+                  window.clearTimeout(interactionTimeoutRef.current);
+                }
+                interactionTimeoutRef.current = window.setTimeout(() => {
+                  setIsUserInteracting(false);
+                }, 600);
+              };
+              map.on('zoomend moveend dragend', endInteraction);
+            }
+          } catch {}
+        }}
+      >
+          {/* Single TileLayer with automatic fallback to Carto if OSM errors */}
+          {tileSource === 'osm' ? (
+            <TileLayer
+              url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              eventHandlers={{
+                tileerror: () => {
+                  // Switch to Carto on tile load error
+                  setTileSource('carto');
+                }
+                ,
+                load: () => {
+                  const map = mapRef.current;
+                  if (map) {
+                    try { map.invalidateSize(); } catch {}
+                  }
+                }
+              }}
+            />
+          ) : (
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
+              subdomains={["a","b","c","d"]}
+              maxZoom={19}
+              eventHandlers={{
+                load: () => {
+                  const map = mapRef.current;
+                  if (map) { try { map.invalidateSize(); } catch {} }
+                }
+              }}
             />
           )}
-        </MapContainer>
-      )}
+
+          {/* Panes to control z-index: markers above route */}
+          <Pane name="routes" style={{ zIndex: 400 }}>
+            {routeCoordinates.length > 0 && (
+              <Polyline
+                positions={routeCoordinates}
+                color="#ff5722"
+                weight={5}
+                opacity={0.8}
+                dashArray="10, 5"
+              />
+            )}
+          </Pane>
+
+          <Pane name="markers" style={{ zIndex: 650 }}>
+            {/* Drone Marker */}
+            <Marker position={currentDroneLocation} icon={droneIcon} zIndexOffset={650}>
+              <Popup>
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#1976d2' }}>
+                     Drone Giao Hàng
+                  </Typography>
+                  <Typography variant="caption" display="block">
+                    Đơn hàng: #{orderId || 'DEMO'}
+                  </Typography>
+                  <Typography variant="caption" display="block">
+                    Khoảng cách còn lại: {routeDistance > 0 ? `${routeDistance.toFixed(2)} km` : 'Đang tính...'}
+                  </Typography>
+                  <Typography variant="caption" display="block">
+                    Thời gian dự kiến: {estimatedTime > 0 ? `${estimatedTime} phút` : 'Đang tính...'}
+                  </Typography>
+                  <Typography variant="caption" display="block" sx={{ color: '#666' }}>
+                    GPS: {currentDroneLocation.lat.toFixed(4)}, {currentDroneLocation.lng.toFixed(4)}
+                  </Typography>
+                </Box>
+              </Popup>
+            </Marker>
+
+            {/* Waypoint label W0 near drone */}
+            <Marker position={currentDroneLocation} icon={w0LabelIcon} zIndexOffset={660} />
+
+            {/* Pulsing marker to highlight movement */}
+            <CircleMarker
+              center={currentDroneLocation}
+              radius={10}
+              pathOptions={{ color: '#1976d2', fillColor: '#1976d2', fillOpacity: 0.25 }}
+            />
+
+            {/* W2 (Destination) Marker */}
+            <Marker position={targetLocation} icon={customerIcon} zIndexOffset={650}>
+              <Popup>
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#4caf50' }}>
+                     Điểm giao (W2)
+                  </Typography>
+                  <Typography variant="caption" display="block">
+                    Điểm đến của drone
+                  </Typography>
+                  <Typography variant="caption" display="block" sx={{ color: '#666' }}>
+                    GPS: {targetLocation.lat.toFixed(4)}, {targetLocation.lng.toFixed(4)}
+                  </Typography>
+                </Box>
+              </Popup>
+            </Marker>
+
+            {/* Waypoint label near W2 */}
+            <Marker position={targetLocation} icon={w2LabelIcon} zIndexOffset={660} />
+
+            {/* W2 Circle marker fallback */}
+            <CircleMarker
+              center={targetLocation}
+              radius={8}
+              pathOptions={{ color: '#4caf50', fillColor: '#4caf50', fillOpacity: 0.25 }}
+            />
+          </Pane>
+      </MapContainer>
 
       {/* Map Info */}
       <Box
@@ -300,8 +571,8 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
           ⏱️ Thời gian dự kiến: {estimatedTime > 0 ? `${estimatedTime} phút` : 'Đang tính...'}
         </Typography>
         
-        <Typography variant="caption" display="block" sx={{ mb: 1, color: '#4caf50' }}>
-          🎯 Trạng thái: Đang giao hàng
+        <Typography variant="caption" display="block" sx={{ mb: 1, color: hasArrived ? '#2e7d32' : '#4caf50' }}>
+          🎯 Trạng thái: {hasArrived ? 'Đã đến điểm giao (W2)' : 'Đang di chuyển tới W2'}
         </Typography>
         
         <Typography variant="caption" display="block" sx={{ fontSize: '0.7rem', color: '#666' }}>

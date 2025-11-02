@@ -63,24 +63,109 @@ function resolveImage(url?: string): string {
   return url.startsWith('/') ? `${origin}${url}` : url;
 }
 
+function mapBackendToUiStatus(s?: string): OrderVM['status'] {
+  const val = String(s || '').toUpperCase();
+  switch (val) {
+    case 'READY_FOR_DELIVERY':
+    case 'ASSIGNED':
+    case 'OUT_FOR_DELIVERY':
+    case 'DELIVERING':
+      return 'DELIVERING';
+    case 'DELIVERED':
+    case 'COMPLETED':
+      return 'COMPLETED';
+    case 'REJECTED':
+    case 'FAILED':
+    case 'CANCELLED':
+      return 'CANCELLED';
+    case 'PREPARING':
+      return 'PREPARING';
+    case 'CONFIRMED':
+      return 'CONFIRMED';
+    case 'CREATED':
+    default:
+      return 'CREATED';
+  }
+}
+
 function toVM(order: OrderDTO): OrderVM {
   const items: OrderItemVM[] = Array.isArray(order.orderItems)
     ? order.orderItems.map((it) => ({
         id: String(it.id ?? `${order.id}-${Math.random()}`),
-        name: it.menuItem?.name || 'Item',
+        name: it.menuItem?.name || (it as any).name || (it as any).nameSnapshot || 'Item',
         quantity: Number(it.quantity ?? 0),
-        price: Number(it.unitPrice ?? it.menuItem?.price ?? 0),
-        image: resolveImage(it.menuItem?.imageUrl),
+        price: Number(it.unitPrice ?? it.menuItem?.price ?? (it as any).price ?? 0),
+        image: resolveImage(it.menuItem?.imageUrl || (it as any).image || (it as any).imageSnapshot),
       }))
     : [];
 
   return {
     id: String(order.id),
-    status: order.status || 'CREATED',
+    status: mapBackendToUiStatus(order.status as any),
     total: Number(order.totalAmount ?? 0),
     createdAt: order.createdAt || '',
     items,
   };
+}
+
+// ===== Helpers for flexible parsing =====
+function looksLikeOrderLoose(o: any): boolean {
+  return o && typeof o === 'object' && (
+    ('id' in o) || ('status' in o) || ('orderItems' in o) || ('items' in o) || ('totalAmount' in o)
+  );
+}
+
+function coerceOrderLoose(o: any): OrderDTO | null {
+  if (!o || typeof o !== 'object') return null;
+  const idRaw = (o.id ?? o.orderId ?? o.code);
+  const id = Number(idRaw);
+  if (Number.isNaN(id)) return null;
+  const statusRaw = String(o.status ?? '').toUpperCase();
+  const allowed = ['CREATED','CONFIRMED','PREPARING','DELIVERING','COMPLETED','CANCELLED'];
+  const status = allowed.includes(statusRaw) ? statusRaw as OrderDTO['status'] : 'CREATED';
+  const totalAmount = Number(o.totalAmount ?? o.total ?? o.amount ?? 0);
+  const createdAt = String(o.createdAt ?? o.createdDate ?? o.created_time ?? o.time ?? '');
+  const itemsRaw = Array.isArray(o.orderItems) ? o.orderItems : (Array.isArray(o.items) ? o.items : undefined);
+  const orderItems = Array.isArray(itemsRaw) ? itemsRaw.map((it: any) => ({
+    id: Number(it.id ?? it.itemId ?? Math.random()),
+    quantity: Number(it.quantity ?? it.qty ?? 0),
+    unitPrice: (it.unitPrice ?? it.price ?? undefined) !== undefined ? Number(it.unitPrice ?? it.price) : undefined,
+    menuItem: (it.menuItem || it.item) ? {
+      id: Number((it.menuItem?.id ?? it.item?.id) ?? 0),
+      name: String((it.menuItem?.name ?? it.item?.name) ?? ''),
+      imageUrl: (it.menuItem?.imageUrl ?? it.item?.imageUrl) ? String(it.menuItem?.imageUrl ?? it.item?.imageUrl) : undefined,
+      price: (it.menuItem?.price ?? it.item?.price) !== undefined ? Number(it.menuItem?.price ?? it.item?.price) : undefined,
+    } : undefined,
+  })) : undefined;
+  return { id, status, totalAmount, createdAt, orderItems };
+}
+
+function findOrderArrayDeepLoose(obj: any): any[] | null {
+  if (!obj || typeof obj !== 'object') return null;
+  const keys = Object.keys(obj);
+  for (const key of keys) {
+    const val = obj[key];
+    if (Array.isArray(val)) {
+      if (val.length === 0) return val;
+      if (looksLikeOrderLoose(val[0])) return val;
+      if (typeof val[0] === 'object') {
+        const mapped = (val as any[]).map(coerceOrderLoose).filter(Boolean) as OrderDTO[];
+        if (mapped.length > 0) return mapped as any[];
+      }
+    } else if (val && typeof val === 'object') {
+      if (Array.isArray(val.content)) {
+        const inner = val.content;
+        if (inner.length === 0 || looksLikeOrderLoose(inner[0])) return inner;
+        if (typeof inner[0] === 'object') {
+          const mapped = (inner as any[]).map(coerceOrderLoose).filter(Boolean) as OrderDTO[];
+          if (mapped.length > 0) return mapped as any[];
+        }
+      }
+      const nested = findOrderArrayDeepLoose(val);
+      if (nested) return nested;
+    }
+  }
+  return null;
 }
 
 export async function getOrderById(userId: string | number, orderId: string | number): Promise<OrderDTO> {
@@ -89,8 +174,102 @@ export async function getOrderById(userId: string | number, orderId: string | nu
 }
 
 export async function listMyOrders(userId: string | number): Promise<OrderVM[]> {
-  const res = await api.get('/orders/me', { params: { userId } });
-  const orders: OrderDTO[] = res.data;
+  let data: any;
+  try {
+    // Ưu tiên endpoint compact để tránh payload quá lớn
+    const res = await api.get('/orders/me/compact', { params: { userId } });
+    data = res.data;
+  } catch (e: any) {
+    // Fallback sang endpoint đầy đủ nếu compact không có (404/500/403)
+    try {
+      const res2 = await api.get('/orders/me', { params: { userId } });
+      data = res2.data;
+    } catch (e2: any) {
+      // Thử thêm lần nữa không kèm params nếu 403
+      if (e2?.response?.status === 403) {
+        try {
+          const res3 = await api.get('/orders/me');
+          data = res3.data;
+        } catch (e3: any) {
+          console.warn('listMyOrders: fallback failed', e3?.message || e3);
+          return [];
+        }
+      } else {
+        console.warn('listMyOrders: request failed', e2?.message || e2);
+        return [];
+      }
+    }
+  }
+
+  // Một số môi trường trả về chuỗi (HTML hoặc JSON dạng text), cần xử lý an toàn
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    const looksJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+    if (looksJson) {
+      try {
+        data = JSON.parse(trimmed);
+      } catch (e) {
+        console.warn('listMyOrders: JSON parse failed for string body');
+        return [];
+      }
+    } else {
+      // Có thể là trang login HTML do auth chưa đúng
+      console.warn('listMyOrders: HTML response instead of JSON (likely auth/session issue)');
+      return [];
+    }
+  }
+
+  let orders: OrderDTO[] = [];
+  if (Array.isArray(data)) {
+    if (data.length === 0 || looksLikeOrderLoose(data[0])) {
+      orders = data as OrderDTO[];
+    } else if (typeof data[0] === 'object') {
+      const mapped = (data as any[]).map(coerceOrderLoose).filter(Boolean) as OrderDTO[];
+      orders = mapped;
+    }
+  } else if (data && Array.isArray((data as any).content)) {
+    const inner = (data as any).content;
+    if (inner.length === 0 || looksLikeOrderLoose(inner[0])) {
+      orders = inner as OrderDTO[];
+    } else if (typeof inner[0] === 'object') {
+      const mapped = (inner as any[]).map(coerceOrderLoose).filter(Boolean) as OrderDTO[];
+      orders = mapped;
+    }
+  } else if (data && typeof data === 'object') {
+    const candidates = ['data', 'orders', 'result', 'records', 'items', 'rows', 'list'];
+    let found: any[] | undefined;
+    for (const key of candidates) {
+      const val = (data as any)[key];
+      if (Array.isArray(val)) { found = val; break; }
+      if (val && Array.isArray(val.content)) { found = val.content; break; }
+    }
+    if (found) {
+      if (found.length === 0 || looksLikeOrderLoose(found[0])) {
+        orders = found as OrderDTO[];
+      } else if (typeof found[0] === 'object') {
+        const mapped = (found as any[]).map(coerceOrderLoose).filter(Boolean) as OrderDTO[];
+        orders = mapped;
+      }
+    } else {
+      const deep = findOrderArrayDeepLoose(data);
+      if (deep) {
+        if (deep.length === 0 || looksLikeOrderLoose(deep[0])) {
+          orders = deep as OrderDTO[];
+        } else if (typeof deep[0] === 'object') {
+          const mapped = (deep as any[]).map(coerceOrderLoose).filter(Boolean) as OrderDTO[];
+          orders = mapped;
+        }
+      } else if ((data as any).id) {
+        orders = [data as OrderDTO];
+      } else {
+        console.warn('listMyOrders: Unrecognized response structure', { keys: Object.keys(data || {}), sample: JSON.stringify(data).slice(0, 200) });
+        orders = [];
+      }
+    }
+  } else {
+    console.warn('listMyOrders: Response is neither array nor object');
+    orders = [];
+  }
   return orders.map(toVM);
 }
 
@@ -109,8 +288,164 @@ export async function createOrder(userId: string | number, payload: CreateOrderR
 }
 
 export async function getMyOrders(userId: string | number): Promise<OrderDTO[]> {
-  const res = await api.get('/orders/me', { params: { userId } });
-  return res.data;
+  // Thử gọi với userId (một số backend yêu cầu), nếu 403 thì fallback không kèm params
+  let data: any;
+  try {
+    const res = await api.get('/orders/me', { params: { userId } });
+    data = res.data;
+  } catch (e: any) {
+    if (e?.response?.status === 403) {
+      const res2 = await api.get('/orders/me');
+      data = res2.data;
+    } else {
+      throw e;
+    }
+  }
+
+  // Một số môi trường trả về chuỗi (HTML hoặc JSON dạng text), cần xử lý an toàn
+  if (typeof data === 'string') {
+    const trimmed = data.trim();
+    const looksJson = trimmed.startsWith('{') || trimmed.startsWith('[');
+    if (looksJson) {
+      try {
+        data = JSON.parse(trimmed);
+      } catch (e) {
+        console.warn('getMyOrders: JSON parse failed for string body');
+        return [];
+      }
+    } else {
+      // Có thể là trang login HTML do auth chưa đúng
+      console.warn('getMyOrders: HTML response instead of JSON (likely auth/session issue)');
+      return [];
+    }
+  }
+
+  // Helper: nhận diện một item trông giống OrderDTO
+  const looksLikeOrder = (o: any) => {
+    return o && typeof o === 'object' && (
+      ('id' in o) || ('status' in o) || ('orderItems' in o) || ('totalAmount' in o)
+    );
+  };
+
+  // Helper: cố gắng chuyển object bất kỳ về OrderDTO tối thiểu
+  const coerceOrder = (o: any): OrderDTO | null => {
+    if (!o || typeof o !== 'object') return null;
+    const idRaw = (o.id ?? o.orderId ?? o.code);
+    const id = Number(idRaw);
+    if (Number.isNaN(id)) return null;
+    const statusRaw = String(o.status ?? '').toUpperCase();
+    const allowed = ['CREATED','CONFIRMED','PREPARING','DELIVERING','COMPLETED','CANCELLED'];
+    const status = allowed.includes(statusRaw) ? statusRaw as OrderDTO['status'] : 'CREATED';
+    const totalAmount = Number(o.totalAmount ?? o.total ?? o.amount ?? 0);
+    const createdAt = String(o.createdAt ?? o.createdDate ?? o.created_time ?? o.time ?? '');
+    const itemsRaw = Array.isArray(o.orderItems) ? o.orderItems : (Array.isArray(o.items) ? o.items : undefined);
+    const orderItems = Array.isArray(itemsRaw) ? itemsRaw.map((it: any) => ({
+      id: Number(it.id ?? it.itemId ?? Math.random()),
+      quantity: Number(it.quantity ?? it.qty ?? 0),
+      unitPrice: (it.unitPrice ?? it.price ?? undefined) !== undefined ? Number(it.unitPrice ?? it.price) : undefined,
+      menuItem: (it.menuItem || it.item) ? {
+        id: Number((it.menuItem?.id ?? it.item?.id) ?? 0),
+        name: String((it.menuItem?.name ?? it.item?.name) ?? ''),
+        imageUrl: (it.menuItem?.imageUrl ?? it.item?.imageUrl) ? String(it.menuItem?.imageUrl ?? it.item?.imageUrl) : undefined,
+        price: (it.menuItem?.price ?? it.item?.price) !== undefined ? Number(it.menuItem?.price ?? it.item?.price) : undefined,
+      } : undefined,
+    })) : undefined;
+    return { id, status, totalAmount, createdAt, orderItems };
+  };
+
+  // Helper: tìm mảng đơn hàng lồng sâu trong object
+  const findOrderArrayDeep = (obj: any): any[] | null => {
+    if (!obj || typeof obj !== 'object') return null;
+    const keys = Object.keys(obj);
+    for (const key of keys) {
+      const val = obj[key];
+      if (Array.isArray(val)) {
+        if (val.length === 0) return val; // mảng rỗng vẫn hợp lệ
+        if (looksLikeOrder(val[0])) return val;
+        // Nếu phần tử là object, thử ép kiểu sang OrderDTO
+        if (typeof val[0] === 'object') {
+          const mapped = (val as any[])
+            .map(coerceOrder)
+            .filter(Boolean) as OrderDTO[];
+          if (mapped.length > 0) return mapped as any[];
+        }
+      } else if (val && typeof val === 'object') {
+        // Ưu tiên lấy val.content nếu là mảng
+        if (Array.isArray(val.content)) {
+          const inner = val.content;
+          if (inner.length === 0 || looksLikeOrder(inner[0])) return inner;
+          if (typeof inner[0] === 'object') {
+            const mapped = (inner as any[])
+              .map(coerceOrder)
+              .filter(Boolean) as OrderDTO[];
+            if (mapped.length > 0) return mapped as any[];
+          }
+        }
+        const nested = findOrderArrayDeep(val);
+        if (nested) return nested;
+      }
+    }
+    return null;
+  };
+
+  let orders: OrderDTO[] = [];
+  if (Array.isArray(data)) {
+    // Nếu là mảng nhưng không phải OrderDTO, thử ép kiểu
+    if (data.length === 0 || looksLikeOrder(data[0])) {
+      orders = data as OrderDTO[];
+    } else if (typeof data[0] === 'object') {
+      const mapped = (data as any[])
+        .map(coerceOrder)
+        .filter(Boolean) as OrderDTO[];
+      orders = mapped;
+    }
+  } else if (data && Array.isArray((data as any).content)) {
+    orders = (data as any).content;
+  } else if (data && typeof data === 'object') {
+    // Unwrap common response wrappers: data, orders, result, records, items, rows, list
+    const candidates = ['data', 'orders', 'result', 'records', 'items', 'rows', 'list'];
+    let found: any[] | undefined;
+    for (const key of candidates) {
+      const val = (data as any)[key];
+      if (Array.isArray(val)) { found = val; break; }
+      if (val && Array.isArray(val.content)) { found = val.content; break; }
+    }
+    if (found) {
+      if (found.length === 0 || looksLikeOrder(found[0])) {
+        orders = found as OrderDTO[];
+      } else if (typeof found[0] === 'object') {
+        const mapped = (found as any[])
+          .map(coerceOrder)
+          .filter(Boolean) as OrderDTO[];
+        orders = mapped;
+      }
+    } else {
+      // Thử tìm sâu hơn trong object
+      const deep = findOrderArrayDeep(data);
+      if (deep) {
+        if (deep.length === 0 || looksLikeOrder(deep[0])) {
+          orders = deep as OrderDTO[];
+        } else if (typeof deep[0] === 'object') {
+          const mapped = (deep as any[])
+            .map(coerceOrder)
+            .filter(Boolean) as OrderDTO[];
+          orders = mapped;
+        }
+      } else if ((data as any).id) {
+        // Một số môi trường trả về đơn lẻ thay vì mảng
+        orders = [data as OrderDTO];
+      } else {
+        const keys = Object.keys(data || {});
+        console.warn('getMyOrders: Unrecognized response structure', { keys, sample: JSON.stringify(data).slice(0, 200) });
+        return [];
+      }
+    }
+  } else {
+    console.warn('getMyOrders: Response is neither array nor object');
+    return [];
+  }
+
+  return orders;
 }
 
 // ================================================
@@ -171,47 +506,47 @@ export async function updateOrderStatus(orderId: number, status: string): Promis
   return res.data;
 }
 
-// ================================================
-// Drone Assignment and Tracking APIs
-// ================================================
+// ================================
+// Drone-related helpers for admin flow
+// ================================
 
 export interface DroneAssignmentResponse {
-  orderId: number;
-  droneId: number;
-  deliveryId: number;
-  message: string;
+  success?: boolean;
+  droneId?: string;
+  deliveryId?: string;
+  message?: string;
 }
 
 export interface DeliveryTrackingResponse {
-  orderId: number;
-  droneId: number;
-  deliveryId: number;
-  status: string;
-  currentLat: number;
-  currentLng: number;
-  progress: number;
-  estimatedArrival: string;
-  waypoints: Array<{
-    lat: number;
-    lng: number;
-    timestamp: string;
-  }>;
+  deliveryId: string | number;
+  orderId?: string | number;
+  droneId?: string;
+  status?: string;
+  etaSeconds?: number;
 }
 
-// Auto-assign drone to order when status is READY_FOR_DELIVERY
+// Auto-assign a drone for an order
 export async function assignDroneToOrder(orderId: number): Promise<DroneAssignmentResponse> {
-  const res = await api.post(`/orders/${orderId}/assign-drone`);
+  const res = await api.post('/drone/assignments/auto', { orderId });
   return res.data;
 }
 
-// Get real-time delivery tracking information
-export async function getDeliveryTracking(orderId: number): Promise<DeliveryTrackingResponse> {
-  const res = await api.get(`/orders/${orderId}/delivery-tracking`);
-  return res.data;
+// Mark delivery as completed for an order (backend should handle mapping order->delivery)
+export async function completeDelivery(orderId: number): Promise<void> {
+  // Try order-based endpoint first; backend may expose either
+  try {
+    await api.post(`/orders/${orderId}/complete`);
+  } catch (err) {
+    // Fallback to delivery-based endpoint if order-based doesn't exist
+    try {
+      await api.post(`/deliveries/${orderId}/complete`);
+    } catch (err2) {
+      throw err2;
+    }
+  }
 }
 
-// Complete delivery manually
-export async function completeDelivery(orderId: number): Promise<{ message: string }> {
-  const res = await api.post(`/orders/${orderId}/complete-delivery`);
-  return res.data;
+// Preferred: complete by deliveryId (backend exposes /deliveries/{id}/complete)
+export async function completeDeliveryByDeliveryId(deliveryId: number): Promise<void> {
+  await api.post(`/deliveries/${deliveryId}/complete`);
 }
