@@ -41,44 +41,7 @@ public class DroneController {
         return ResponseEntity.ok(droneRepository.findByStatus(Drone.DroneStatus.IDLE));
     }
     
-    /**
-     * POST /assignments/auto - Tự động gán drone cho đơn hàng
-     */
-    @PostMapping("/assignments/auto")
-    public ResponseEntity<?> autoAssignDrone(@RequestParam Long orderId) {
-        try {
-            Order order = orderRepository.findById(orderId)
-                    .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderId));
-            
-            if (order.getStatus() != Order.OrderStatus.READY_FOR_DELIVERY) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Order must be READY_FOR_DELIVERY status"));
-            }
-            
-            Optional<DroneAssignment> assignment = fleetService.autoAssignDrone(order);
-            
-            if (assignment.isEmpty()) {
-                return ResponseEntity.ok(Map.of(
-                    "success", false,
-                    "message", "No available drones. Order queued for assignment.",
-                    "orderId", orderId
-                ));
-            }
-            
-            DroneAssignmentResponse response = buildAssignmentResponse(assignment.get());
-            
-            return ResponseEntity.ok(Map.of(
-                "success", true,
-                "message", "Drone assigned successfully",
-                "assignment", response
-            ));
-            
-        } catch (Exception e) {
-            log.error("Error in auto assignment for order {}: {}", orderId, e.getMessage());
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", e.getMessage()));
-        }
-    }
+    
     
     /**
      * POST /assignments/manual - Gán drone thủ công

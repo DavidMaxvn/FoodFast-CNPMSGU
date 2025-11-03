@@ -15,6 +15,7 @@ import java.util.List;
 @AllArgsConstructor
 public class OrderCompactResponse {
     private Long id;
+    private String orderCode;
     private String status;
     private BigDecimal total;
     private LocalDateTime createdAt;

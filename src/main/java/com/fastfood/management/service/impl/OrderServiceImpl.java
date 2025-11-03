@@ -70,6 +70,13 @@ public class OrderServiceImpl implements OrderService {
                 .build();
         
         order = orderRepository.save(order);
+
+        // Generate order code: ORD-YYYYMMDD-ID
+        java.time.LocalDate today = java.time.LocalDate.now();
+        String datePart = today.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+        String code = "ORD-" + datePart + "-" + order.getId();
+        order.setOrderCode(code);
+        order = orderRepository.save(order);
         
         // tạo order, tính total 
         BigDecimal totalAmount = BigDecimal.ZERO;
@@ -169,12 +176,16 @@ public class OrderServiceImpl implements OrderService {
             case CONFIRMED:
             case PREPARING:
             case READY_FOR_DELIVERY:
+            case REJECTED:
+                if (!(isAdmin || isMerchant || isStaff)) {
+                    throw new IllegalStateException("Chỉ nhân viên cửa hàng hoặc admin mới được cập nhật trạng thái bếp");
+                }
+                break;
             case ASSIGNED:
             case OUT_FOR_DELIVERY:
             case DELIVERED:
-            case REJECTED:
-                if (!(isAdmin || isMerchant || isStaff)) {
-                    throw new IllegalStateException("Chỉ nhân viên cửa hàng hoặc admin mới được cập nhật trạng thái này");
+                if (!isAdmin) {
+                    throw new IllegalStateException("Chỉ admin/hệ thống được cập nhật trạng thái giao hàng (ASSIGNED/OUT_FOR_DELIVERY/DELIVERED)");
                 }
                 break;
             case CANCELLED:
@@ -317,6 +328,32 @@ public class OrderServiceImpl implements OrderService {
         return orders.map(this::mapOrderToResponse);
     }
 
+    @Override
+    public Page<OrderResponse> getOrdersByStatus(Order.OrderStatus status, Pageable pageable, String code) {
+        if (code != null && !code.trim().isEmpty()) {
+            java.util.Optional<Order> opt = orderRepository.findByOrderCode(code.trim());
+            java.util.List<Order> list = opt.map(java.util.List::of).orElse(java.util.List.of());
+            org.springframework.data.domain.Page<Order> page = new org.springframework.data.domain.PageImpl<>(list, pageable, list.size());
+            return page.map(this::mapOrderToResponse);
+        }
+        return getOrdersByStatus(status, pageable);
+    }
+
+    @Override
+    public Page<OrderResponse> getOrdersByStatus(Order.OrderStatus status, Pageable pageable, String code, Long storeId) {
+        if (code != null && !code.trim().isEmpty()) {
+            java.util.Optional<Order> opt = orderRepository.findByOrderCode(code.trim());
+            java.util.List<Order> list = opt.map(java.util.List::of).orElse(java.util.List.of());
+            org.springframework.data.domain.Page<Order> page = new org.springframework.data.domain.PageImpl<>(list, pageable, list.size());
+            return page.map(this::mapOrderToResponse);
+        }
+        if (storeId != null) {
+            Page<Order> orders = orderRepository.findByStoreIdAndStatus(storeId, status, pageable);
+            return orders.map(this::mapOrderToResponse);
+        }
+        return getOrdersByStatus(status, pageable);
+    }
+
     // Helper methods
     
     private void validateStatusTransition(Order.OrderStatus currentStatus, Order.OrderStatus newStatus) {
@@ -384,6 +421,7 @@ public class OrderServiceImpl implements OrderService {
         // For now, return a simple implementation
         OrderResponse response = new OrderResponse();
         response.setId(order.getId());
+        response.setOrderCode(order.getOrderCode());
         response.setStatus(order.getStatus().name());
         response.setTotalAmount(order.getTotalAmount());
         response.setPaymentMethod(order.getPaymentMethod().name());

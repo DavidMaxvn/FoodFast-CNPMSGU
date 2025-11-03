@@ -11,6 +11,7 @@ import com.fastfood.management.repository.DroneRepository;
 import com.fastfood.management.repository.OrderRepository;
 import com.fastfood.management.service.api.DroneSimulator;
 import com.fastfood.management.service.api.DroneTrackingService;
+import com.fastfood.management.service.api.FleetService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -39,6 +40,7 @@ public class DroneSimulatorImpl implements DroneSimulator {
     private final DeliveryEventRepository eventRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final DroneTrackingService droneTrackingService;
+    private final FleetService fleetService;
     
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(10);
     private final Map<Long, ScheduledFuture<?>> activeSimulations = new ConcurrentHashMap<>();
@@ -241,7 +243,8 @@ public class DroneSimulatorImpl implements DroneSimulator {
         switch (currentSegment) {
             case "W0_W1": return "W1_W2";
             case "W1_W2": return "DWELL";
-            case "DWELL": return null; // Hoàn thành
+            case "DWELL": return "W2_W3"; // Quay về trạm
+            case "W2_W3": return null; // Hoàn thành toàn bộ chu trình
             default: return null;
         }
     }
@@ -257,6 +260,9 @@ public class DroneSimulatorImpl implements DroneSimulator {
             case "DWELL":
                 drone.setStatus(Drone.DroneStatus.ARRIVING);
                 break;
+            case "W2_W3":
+                drone.setStatus(Drone.DroneStatus.RETURN_TO_BASE);
+                break;
         }
     }
     
@@ -265,6 +271,7 @@ public class DroneSimulatorImpl implements DroneSimulator {
             case "W0_W1": return new double[]{delivery.getW0Lat(), delivery.getW0Lng()};
             case "W1_W2": return new double[]{delivery.getW1Lat(), delivery.getW1Lng()};
             case "DWELL": return new double[]{delivery.getW2Lat(), delivery.getW2Lng()};
+            case "W2_W3": return new double[]{delivery.getW2Lat(), delivery.getW2Lng()};
             default: return new double[]{0.0, 0.0};
         }
     }
@@ -274,32 +281,58 @@ public class DroneSimulatorImpl implements DroneSimulator {
             case "W0_W1": return new double[]{delivery.getW1Lat(), delivery.getW1Lng()};
             case "W1_W2": return new double[]{delivery.getW2Lat(), delivery.getW2Lng()};
             case "DWELL": return new double[]{delivery.getW2Lat(), delivery.getW2Lng()};
+            case "W2_W3": return new double[]{delivery.getW3Lat(), delivery.getW3Lng()};
             default: return new double[]{0.0, 0.0};
         }
     }
     
     private void completeDelivery(Delivery delivery) {
-        // Cập nhật trạng thái
+        // Đánh dấu đơn giao hoàn tất
         delivery.setStatus(Delivery.DeliveryStatus.COMPLETED);
         deliveryRepository.save(delivery);
-        
+
         // Cập nhật order
         Order order = delivery.getOrder();
         order.setStatus(Order.OrderStatus.DELIVERED);
         orderRepository.save(order);
-        
-        // Cập nhật drone
+
+        // Hoàn tất assignment và đưa drone về IDLE qua FleetService
         Drone drone = delivery.getDrone();
-        drone.setStatus(Drone.DroneStatus.IDLE);
-        droneRepository.save(drone);
-        
+        fleetService.getCurrentAssignment(drone.getId()).ifPresent(assignment -> {
+            fleetService.completeAssignment(assignment.getId());
+        });
+
         // Dừng simulation
         stopSimulation(delivery.getId());
-        
+
         // Gửi completion event
         sendStateChangeEvent(delivery, "COMPLETED");
-        
+
         log.info("Delivery {} completed successfully", delivery.getId());
+
+        // Tự động gán đơn READY_FOR_DELIVERY nếu chế độ AUTO và có đơn trong cùng cửa hàng
+        try {
+            if ("AUTO".equalsIgnoreCase(droneConfig.getAssignMode()) && order.getStore() != null && order.getStore().getId() != null) {
+                org.springframework.data.domain.Page<Order> readyPage =
+                        orderRepository.findByStoreIdAndStatus(order.getStore().getId(), Order.OrderStatus.READY_FOR_DELIVERY,
+                                org.springframework.data.domain.PageRequest.of(0, 1));
+                if (!readyPage.isEmpty()) {
+                    Order nextOrder = readyPage.getContent().get(0);
+                    fleetService.autoAssignDrone(nextOrder).ifPresent(da -> {
+                        Delivery nextDelivery = da.getDelivery();
+                        if (nextDelivery != null) {
+                            nextDelivery.setStatus(Delivery.DeliveryStatus.IN_PROGRESS);
+                            nextDelivery.setSegmentStartTime(LocalDateTime.now());
+                            deliveryRepository.save(nextDelivery);
+                            startSimulation(nextDelivery.getId());
+                            log.info("Auto-assigned and started simulation for next order {} with delivery {}", nextOrder.getId(), nextDelivery.getId());
+                        }
+                    });
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Auto-assign after completion failed: {}", ex.getMessage());
+        }
     }
     
     private void sendGPSUpdate(Delivery delivery, double lat, double lng, int eta) {

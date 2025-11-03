@@ -50,6 +50,9 @@ public class Order {
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", nullable = false)
     private PaymentStatus paymentStatus;
+
+    @Column(name = "order_code", unique = true)
+    private String orderCode;
     
     @ManyToOne
     @JoinColumn(name = "address_id")

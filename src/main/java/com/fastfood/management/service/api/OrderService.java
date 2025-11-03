@@ -14,6 +14,8 @@ public interface OrderService {
     Order getOrderById(Long id, User currentUser);
     List<Order> listMyOrders(User currentUser);
     Page<OrderResponse> getOrdersByStatus(Order.OrderStatus status, Pageable pageable);
+    Page<OrderResponse> getOrdersByStatus(Order.OrderStatus status, Pageable pageable, String code);
+    Page<OrderResponse> getOrdersByStatus(Order.OrderStatus status, Pageable pageable, String code, Long storeId);
     Order updateOrderStatus(Long id, Order.OrderStatus status, User currentUser);
     void cancelOrder(Long id, String reason, User currentUser);
 }

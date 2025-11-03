@@ -14,6 +14,7 @@ public class OrderMapper {
         if (o == null) return null;
         return OrderCompactResponse.builder()
                 .id(o.getId())
+                .orderCode(o.getOrderCode())
                 .status(o.getStatus() != null ? o.getStatus().name() : "CREATED")
                 .total(o.getTotalAmount() != null ? o.getTotalAmount() : BigDecimal.ZERO)
                 .createdAt(o.getCreatedAt())

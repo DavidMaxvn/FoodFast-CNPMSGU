@@ -21,6 +21,9 @@ public interface DroneAssignmentRepository extends JpaRepository<DroneAssignment
     
     @Query("SELECT da FROM DroneAssignment da WHERE da.drone.id = :droneId AND da.completedAt IS NULL")
     Optional<DroneAssignment> findActiveAssignmentByDroneId(Long droneId);
+
+    // Prefer this derived query to avoid NonUniqueResultException when multiple active assignments exist
+    Optional<DroneAssignment> findTopByDroneIdAndCompletedAtIsNullOrderByAssignedAtDesc(Long droneId);
     
     List<DroneAssignment> findByDroneAndCompletedAtIsNotNull(Drone drone);
     

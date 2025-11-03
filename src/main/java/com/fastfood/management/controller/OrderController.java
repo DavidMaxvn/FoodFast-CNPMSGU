@@ -109,9 +109,11 @@ public class OrderController {
     public ResponseEntity<Page<OrderResponse>> getOrdersByStatus(
             @RequestParam("status") String status,
             @RequestParam(value = "page", defaultValue = "0") int page,
-            @RequestParam(value = "size", defaultValue = "20") int size) {
+            @RequestParam(value = "size", defaultValue = "20") int size,
+            @RequestParam(value = "code", required = false) String code,
+            @RequestParam(value = "storeId", required = false) Long storeId) {
         Order.OrderStatus queryStatus = Order.OrderStatus.valueOf(status.toUpperCase());
-        Page<OrderResponse> orders = orderService.getOrdersByStatus(queryStatus, PageRequest.of(page, size));
+        Page<OrderResponse> orders = orderService.getOrdersByStatus(queryStatus, PageRequest.of(page, size), code, storeId);
         return ResponseEntity.ok(orders);
     }
     private User resolveCurrentUser(org.springframework.security.core.userdetails.User principal) {
