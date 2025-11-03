@@ -100,6 +100,25 @@ public class OrderController {
                             "error", "INVALID_STATUS",
                             "message", "Trạng thái không hợp lệ: " + status
                     ));
+        } catch (IllegalStateException e) {
+            // Các ràng buộc nghiệp vụ (ví dụ: yêu cầu PAID từ CONFIRMED trở đi)
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of(
+                            "error", "BUSINESS_RULE_VIOLATION",
+                            "message", e.getMessage()
+                    ));
+        } catch (org.springframework.security.access.AccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of(
+                            "error", "ACCESS_DENIED",
+                            "message", e.getMessage()
+                    ));
+        } catch (jakarta.persistence.EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of(
+                            "error", "NOT_FOUND",
+                            "message", e.getMessage()
+                    ));
         }
     }
 

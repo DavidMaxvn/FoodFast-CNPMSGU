@@ -44,6 +44,8 @@ public class DroneSimulatorImpl implements DroneSimulator {
     
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(10);
     private final Map<Long, ScheduledFuture<?>> activeSimulations = new ConcurrentHashMap<>();
+    // Mô phỏng chỉ thị đường bay quay về trạm sau khi giao xong (không ảnh hưởng trạng thái đơn/assignment)
+    private final Map<Long, ScheduledFuture<?>> activeReturnVisualizations = new ConcurrentHashMap<>();
     
     @Override
     @Async
@@ -243,8 +245,8 @@ public class DroneSimulatorImpl implements DroneSimulator {
         switch (currentSegment) {
             case "W0_W1": return "W1_W2";
             case "W1_W2": return "DWELL";
-            case "DWELL": return "W2_W3"; // Quay về trạm
-            case "W2_W3": return null; // Hoàn thành toàn bộ chu trình
+            case "DWELL": return null; // Hoàn thành giao hàng tại khách
+            case "W2_W3": return null; // (không dùng nữa nếu kết thúc tại DWELL)
             default: return null;
         }
     }
@@ -310,6 +312,7 @@ public class DroneSimulatorImpl implements DroneSimulator {
 
         log.info("Delivery {} completed successfully", delivery.getId());
 
+        boolean startedNextSimulation = false;
         // Tự động gán đơn READY_FOR_DELIVERY nếu chế độ AUTO và có đơn trong cùng cửa hàng
         try {
             if ("AUTO".equalsIgnoreCase(droneConfig.getAssignMode()) && order.getStore() != null && order.getStore().getId() != null) {
@@ -326,12 +329,19 @@ public class DroneSimulatorImpl implements DroneSimulator {
                             deliveryRepository.save(nextDelivery);
                             startSimulation(nextDelivery.getId());
                             log.info("Auto-assigned and started simulation for next order {} with delivery {}", nextOrder.getId(), nextDelivery.getId());
+                            // Có đơn mới, bỏ qua mô phỏng quay về trạm
+                            startedNextSimulation = true;
                         }
                     });
                 }
             }
         } catch (Exception ex) {
             log.warn("Auto-assign after completion failed: {}", ex.getMessage());
+        }
+
+        // Không có đơn mới thì chạy mô phỏng đường bay quay về trạm (chỉ hiển thị)
+        if (!startedNextSimulation) {
+            startReturnToBaseVisualization(delivery);
         }
     }
     
@@ -390,5 +400,54 @@ public class DroneSimulatorImpl implements DroneSimulator {
     public boolean isSimulationRunning(Long deliveryId) {
         ScheduledFuture<?> future = activeSimulations.get(deliveryId);
         return future != null && !future.isDone() && !future.isCancelled();
+    }
+
+    // --- Return-to-base visualization (post-completion, purely cosmetic) ---
+    private void startReturnToBaseVisualization(Delivery delivery) {
+        Long deliveryId = delivery.getId();
+        stopReturnVisualization(deliveryId);
+
+        final LocalDateTime startTime = LocalDateTime.now();
+        final int durationSec = droneConfig.getLegDuration("W2_W3");
+        final double[] startPos = getSegmentStartPosition(delivery, "W2_W3");
+        final double[] endPos = getSegmentEndPosition(delivery, "W2_W3");
+
+        ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
+            try {
+                long elapsed = ChronoUnit.SECONDS.between(startTime, LocalDateTime.now());
+                double u = Math.min(1.0, (double) elapsed / durationSec);
+                double lat = (1 - u) * startPos[0] + u * endPos[0];
+                double lng = (1 - u) * startPos[1] + u * endPos[1];
+
+                // Cập nhật vị trí drone nhưng KHÔNG thay đổi trạng thái đơn/assignment
+                Drone drone = delivery.getDrone();
+                drone.setCurrentLat(lat);
+                drone.setCurrentLng(lng);
+                drone.setLastSeenAt(LocalDateTime.now());
+                droneRepository.save(drone);
+
+                // Gửi GPS update để hiển thị đường bay, ETA=0, segment vẫn là segment cuối
+                sendGPSUpdate(delivery, lat, lng, 0);
+
+                if (u >= 1.0) {
+                    // Hoàn tất mô phỏng quay về trạm
+                    stopReturnVisualization(deliveryId);
+                    log.info("Return-to-base visualization finished for delivery {}", deliveryId);
+                }
+            } catch (Exception e) {
+                log.warn("Return-to-base visualization error for delivery {}: {}", deliveryId, e.getMessage());
+            }
+        }, 0, droneConfig.getGpsTickSec(), TimeUnit.SECONDS);
+
+        activeReturnVisualizations.put(deliveryId, future);
+        log.info("Started return-to-base visualization for delivery {}", deliveryId);
+    }
+
+    private void stopReturnVisualization(Long deliveryId) {
+        ScheduledFuture<?> future = activeReturnVisualizations.remove(deliveryId);
+        if (future != null) {
+            future.cancel(false);
+            log.info("Stopped return-to-base visualization for delivery {}", deliveryId);
+        }
     }
 }

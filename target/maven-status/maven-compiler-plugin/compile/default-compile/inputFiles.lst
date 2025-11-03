@@ -1,3 +1,4 @@
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\config\SchedulingConfig.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\StoreController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\impl\FleetServiceImpl.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\User.java
@@ -21,6 +22,7 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\exc
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\request\OrderRequest.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\config\WebSocketConfig.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\impl\UserDetailsServiceImpl.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\bootstrap\AutoAssignScheduler.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\impl\InventoryServiceImpl.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\OrderActivity.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\model\InventoryDTO.java

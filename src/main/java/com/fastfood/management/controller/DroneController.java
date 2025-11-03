@@ -2,6 +2,9 @@ package com.fastfood.management.controller;
 
 import com.fastfood.management.dto.request.DroneAssignmentRequest;
 import com.fastfood.management.dto.response.DroneAssignmentResponse;
+import com.fastfood.management.entity.Delivery;
+import com.fastfood.management.repository.DeliveryRepository;
+import com.fastfood.management.service.api.DroneSimulator;
 import com.fastfood.management.entity.Drone;
 import com.fastfood.management.entity.DroneAssignment;
 import com.fastfood.management.entity.Order;
@@ -27,6 +30,8 @@ public class DroneController {
     private final DroneRepository droneRepository;
     private final FleetService fleetService;
     private final OrderRepository orderRepository;
+    private final DeliveryRepository deliveryRepository;
+    private final DroneSimulator droneSimulator;
 
     @GetMapping("/drones")
     public ResponseEntity<List<Drone>> listDrones(@RequestParam(value = "status", required = false) Drone.DroneStatus status) {
@@ -66,12 +71,41 @@ public class DroneController {
             }
             
             DroneAssignment assignment = fleetService.manualAssignDrone(order, drone, "ADMIN"); // TODO: Get from auth
+
+            // Optional: immediately start delivery and simulation if client requests
+            boolean start = false;
+            try {
+                start = request.isStart();
+            } catch (Exception ignored) {}
+
+            if (start) {
+                // Update order/delivery/drone statuses to kick off delivery
+                order.setStatus(Order.OrderStatus.OUT_FOR_DELIVERY);
+                order.setUpdatedAt(java.time.LocalDateTime.now());
+                orderRepository.save(order);
+
+                Delivery delivery = assignment.getDelivery();
+                if (delivery != null) {
+                    delivery.setStatus(Delivery.DeliveryStatus.IN_PROGRESS);
+                    delivery.setCurrentSegment("W0_W1");
+                    delivery.setSegmentStartTime(java.time.LocalDateTime.now());
+                    deliveryRepository.save(delivery);
+
+                    Drone assignedDrone = assignment.getDrone();
+                    assignedDrone.setStatus(Drone.DroneStatus.EN_ROUTE_TO_STORE);
+                    droneRepository.save(assignedDrone);
+
+                    // Start simulation loop
+                    droneSimulator.startSimulation(delivery.getId());
+                }
+            }
             DroneAssignmentResponse response = buildAssignmentResponse(assignment);
             
             return ResponseEntity.ok(Map.of(
                 "success", true,
-                "message", "Manual assignment completed",
-                "assignment", response
+                "message", start ? "Manual assignment started" : "Manual assignment completed",
+                "assignment", response,
+                "started", start
             ));
             
         } catch (Exception e) {
