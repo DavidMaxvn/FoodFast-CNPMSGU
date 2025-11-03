@@ -22,9 +22,11 @@ import {
   DialogActions,
   Alert,
 } from '@mui/material';
-import { Search, Visibility, CheckCircle, LocalShipping, Restaurant, Cancel } from '@mui/icons-material';
+import { Search, Visibility, CheckCircle, LocalShipping, Restaurant, Cancel, FlightTakeoff } from '@mui/icons-material';
 import { useMerchantSession } from '../../store/merchantSession';
+import { formatOrderCodeSuggestion } from '../../utils/orderCode';
 import { getOrdersByStatus, updateOrderStatus, getOrderById, assignDroneToOrder, OrderResponse, Page, OrderDTO } from '../../services/order';
+import PaginationBar from '../../components/PaginationBar';
 
 // Order status types aligned with backend
 type OrderStatus = 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
@@ -33,8 +35,8 @@ const statusConfig: Record<OrderStatus, { label: string; color: 'default' | 'inf
   CREATED: { label: 'Mới tạo', color: 'default', icon: <CheckCircle /> },
   CONFIRMED: { label: 'Đã xác nhận', color: 'info', icon: <CheckCircle /> },
   PREPARING: { label: 'Đang chuẩn bị', color: 'warning', icon: <Restaurant /> },
-  READY: { label: 'Sẵn sàng giao', color: 'info', icon: <LocalShipping /> },
-  DELIVERING: { label: 'Đang giao', color: 'primary', icon: <LocalShipping /> },
+  READY: { label: 'Sẵn sàng giao', color: 'info', icon: <FlightTakeoff /> },
+  DELIVERING: { label: 'Đang giao', color: 'primary', icon: <FlightTakeoff /> },
   COMPLETED: { label: 'Hoàn thành', color: 'success', icon: <CheckCircle /> },
   CANCELLED: { label: 'Đã hủy', color: 'error', icon: <Cancel /> },
 };
@@ -76,6 +78,8 @@ const MerchantOrders: React.FC = () => {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
   const [data, setData] = useState<Page<OrderResponse> | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -93,10 +97,37 @@ const MerchantOrders: React.FC = () => {
     ['CREATED','CONFIRMED','PREPARING','READY','DELIVERING','COMPLETED','CANCELLED'][selectedTab] as OrderStatus
   ), [selectedTab]);
 
+  // Helper: trả về chuỗi yyyy-MM-dd của hôm nay theo local time
+  const todayStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = `${d.getMonth() + 1}`.padStart(2, '0');
+    const day = `${d.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Mặc định mỗi tab trạng thái sẽ hiển thị đơn của ngày hôm nay và sắp xếp mới nhất trước
+  useEffect(() => {
+    const t = todayStr();
+    // Chỉ set mặc định nếu người dùng chưa chọn khoảng ngày
+    if (!filterStartDate && !filterEndDate) {
+      setFilterStartDate(t);
+      setFilterEndDate(t);
+      setPage(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTab]);
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await getOrdersByStatus(uiToBackendStatus[currentStatus], page, size);
+      const res = await getOrdersByStatus(
+        uiToBackendStatus[currentStatus],
+        page,
+        size,
+        searchTerm?.trim() || undefined,
+        currentStore ? Number(currentStore.id) : undefined
+      );
       setData(res);
     } catch (e) {
       // noop
@@ -105,7 +136,7 @@ const MerchantOrders: React.FC = () => {
     }
   };
 
-  useEffect(() => { fetchData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [currentStatus, page, size]);
+  useEffect(() => { fetchData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [currentStatus, page, size, searchTerm]);
 
   const openDetails = async (o: OrderResponse) => { 
     setSelectedOrder(o); 
@@ -178,10 +209,39 @@ const MerchantOrders: React.FC = () => {
   };
 
   const filteredContent = useMemo(() => {
-    const list = data?.content || [];
-    if (!searchTerm) return list;
-    return list.filter(o => String(o.id).includes(searchTerm.trim()));
-  }, [data, searchTerm]);
+    let list = data?.content || [];
+
+    // Search by order id or orderCode
+    if (searchTerm) {
+      const q = searchTerm.trim();
+      list = list.filter(o => (o.orderCode ? String(o.orderCode).includes(q) : false) || String(o.id).includes(q) || formatOrderCodeSuggestion(String(o.id)).includes(q));
+    }
+
+    // Date range filter on createdAt
+    const start = filterStartDate ? new Date(`${filterStartDate}T00:00:00`) : null;
+    const end = filterEndDate ? new Date(`${filterEndDate}T23:59:59`) : null;
+    if (start) {
+      list = list.filter(o => {
+        const t = o.createdAt ? new Date(o.createdAt).getTime() : NaN;
+        return !isNaN(t) && t >= start.getTime();
+      });
+    }
+    if (end) {
+      list = list.filter(o => {
+        const t = o.createdAt ? new Date(o.createdAt).getTime() : NaN;
+        return !isNaN(t) && t <= end.getTime();
+      });
+    }
+
+    // Sort by createdAt descending
+    list = list.slice().sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    });
+
+    return list;
+  }, [data, searchTerm, filterStartDate, filterEndDate]);
 
 
   return (
@@ -198,11 +258,27 @@ const MerchantOrders: React.FC = () => {
     <Paper sx={{ p: 2, mb: 2 }}>
       <Stack direction="row" spacing={2} alignItems="center">
         <TextField
-          placeholder="Tìm theo mã đơn (ID)"
+          placeholder="Tìm theo mã đơn (orderCode hoặc ID)"
           value={searchTerm}
           onChange={(e) => { setSearchTerm(e.target.value); setPage(0); }}
           InputProps={{ startAdornment: (<InputAdornment position="start"><Search /></InputAdornment>) }}
           fullWidth
+        />
+        <TextField
+          label="Từ ngày"
+          type="date"
+          value={filterStartDate}
+          onChange={(e) => { setFilterStartDate(e.target.value); setPage(0); }}
+          InputLabelProps={{ shrink: true }}
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          label="Đến ngày"
+          type="date"
+          value={filterEndDate}
+          onChange={(e) => { setFilterEndDate(e.target.value); setPage(0); }}
+          InputLabelProps={{ shrink: true }}
+          sx={{ minWidth: 180 }}
         />
       </Stack>
       <Tabs value={selectedTab} onChange={(_, v) => { setSelectedTab(v); setPage(0); }} variant="scrollable" sx={{ mt: 2 }}>
@@ -230,7 +306,7 @@ const MerchantOrders: React.FC = () => {
         <TableBody>
           {filteredContent.map((o) => (
             <TableRow key={o.id} hover>
-              <TableCell>{o.id}</TableCell>
+              <TableCell>{o.orderCode || formatOrderCodeSuggestion(String(o.id))}</TableCell>
               <TableCell>
                 <Chip size="small" label={(o.paymentStatus || 'PENDING').toUpperCase()} color={(o.paymentStatus === 'PAID' ? 'success' : o.paymentStatus === 'FAILED' ? 'error' : 'warning') as any} />
               </TableCell>
@@ -259,26 +335,26 @@ const MerchantOrders: React.FC = () => {
         </Table>
       </Paper>
 
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 2 }}>
-        <TextField
-          label="Trang"
-          type="number"
-          size="small"
-          value={page + 1}
-          onChange={(e) => setPage(Math.max(0, Number(e.target.value) - 1))}
-          sx={{ width: 100 }}
-        />
-        <TextField
-          label="Kích thước"
-          type="number"
-          size="small"
-          value={size}
-          onChange={(e) => { setSize(Math.max(1, Number(e.target.value))); setPage(0); }}
-          sx={{ width: 120 }}
-        />
+      <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between" sx={{ mt: 2 }}>
         <Typography color="text.secondary">
           Tổng: {data?.totalElements || 0} • Trang {page + 1}/{data?.totalPages || 0}
         </Typography>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <PaginationBar
+            page={page}
+            totalPages={data?.totalPages || 0}
+            onChange={(p) => setPage(p)}
+            maxButtons={5}
+          />
+          <TextField
+            label="Kích thước"
+            type="number"
+            size="small"
+            value={size}
+            onChange={(e) => { setSize(Math.max(1, Number(e.target.value))); setPage(0); }}
+            sx={{ width: 120 }}
+          />
+        </Stack>
       </Stack>
 
       <Dialog open={detailOpen} onClose={closeDetails} maxWidth="md" fullWidth>
@@ -289,6 +365,7 @@ const MerchantOrders: React.FC = () => {
               <Typography>Trạng thái: {statusConfig[backendToUIStatus[selectedOrder.status as any]].label}</Typography>
               <Typography>Thanh toán: {(selectedOrder.paymentStatus || 'PENDING').toUpperCase()} ({selectedOrder.paymentMethod || 'COD'})</Typography>
               <Typography>Thời gian: {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleString('vi-VN') : '-'}</Typography>
+              <Typography variant="caption" color="text.secondary">Gợi ý mã đơn: {formatOrderCodeSuggestion(selectedOrder.id, selectedOrder.createdAt)}</Typography>
               <Typography sx={{ fontWeight: 600 }}>Món:</Typography>
               {detailLoading && <Typography color="text.secondary">Đang tải chi tiết...</Typography>}
               {detailError && <Typography color="error">{detailError}</Typography>}

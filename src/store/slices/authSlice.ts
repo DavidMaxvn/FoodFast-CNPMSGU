@@ -42,6 +42,8 @@ const authSlice = createSlice({
       localStorage.setItem('token', action.payload.token);
       localStorage.setItem('refreshToken', action.payload.refreshToken);
       localStorage.setItem('user', JSON.stringify(action.payload.user));
+      // Clear any previous merchant/store session to avoid cross-account leakage
+      try { localStorage.removeItem('merchantSession'); } catch {}
     },
     loginFailure: (state) => {
       state.isLoading = false;
@@ -50,6 +52,8 @@ const authSlice = createSlice({
       state.token = null;
       state.refreshToken = null;
       localStorage.removeItem('user');
+      // Ensure merchant session is cleared on failed login
+      try { localStorage.removeItem('merchantSession'); } catch {}
     },
     logout: (state) => {
       state.isAuthenticated = false;
@@ -59,6 +63,8 @@ const authSlice = createSlice({
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
+      // Clear merchant session on logout
+      try { localStorage.removeItem('merchantSession'); } catch {}
     },
     refreshTokenSuccess: (state, action: PayloadAction<{ token: string; refreshToken: string }>) => {
       state.token = action.payload.token;

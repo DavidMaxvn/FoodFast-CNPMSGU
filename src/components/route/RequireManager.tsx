@@ -7,23 +7,25 @@ import { CircularProgress, Box, Typography } from "@mui/material";
 import { fetchMyStores } from "../../services/merchantSession";
 
 const RequireManager = ({ children }: { children: JSX.Element }) => {
-    const { currentStore, setSession } = useMerchantSession();
+    const { currentStore, setSession, clearSession } = useMerchantSession();
     const location = useLocation();
     const auth = useSelector((state: RootState) => state.auth);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (!currentStore && auth.isAuthenticated) {
+        // Luôn đồng bộ cửa hàng theo user đăng nhập hiện tại để tránh dính phiên cũ
+        if (auth.isAuthenticated) {
             const fetchAndSetStore = async () => {
                 setLoading(true);
                 try {
-                    // Gọi API thật: /me/stores?userId=<id> và chuẩn hoá dữ liệu
+                    // Xoá phiên cũ trong bộ nhớ nếu có (phòng ngừa leak cross-account)
+                    if (currentStore) clearSession();
                     const list = await fetchMyStores(auth.user?.id);
                     if (list && list.length > 0) {
                         const s = list[0];
                         const normalized: MerchantStore = { id: s.store_id, name: s.store_name, role: s.role };
-                        setSession(normalized); // Tự động chọn cửa hàng đầu tiên
+                        setSession(normalized);
                         console.log('Store loaded:', normalized);
                     } else {
                         console.log('No stores found for user');
@@ -38,7 +40,7 @@ const RequireManager = ({ children }: { children: JSX.Element }) => {
             };
             fetchAndSetStore();
         }
-    }, [currentStore, auth.isAuthenticated, auth.user, setSession]);
+    }, [auth.isAuthenticated, auth.user?.id]);
 
     if (loading || (!currentStore && auth.isAuthenticated)) {
         return (

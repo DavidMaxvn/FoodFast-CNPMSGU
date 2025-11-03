@@ -30,6 +30,7 @@ export interface OrderResponseItem {
 
 export interface OrderResponse {
   id: number;
+  orderCode?: string;
   status: 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
   totalAmount?: number;
   paymentMethod?: string;
@@ -470,9 +471,12 @@ export interface Page<T> {
 }
 
 // New: list orders by status with pagination (for all roles)
-export async function getOrdersByStatus(status: string, page: number = 0, size: number = 20): Promise<Page<OrderResponse>> {
+export async function getOrdersByStatus(status: string, page: number = 0, size: number = 20, code?: string, storeId?: number): Promise<Page<OrderResponse>> {
+  const params: any = { status, page, size };
+  if (code && code.trim()) params.code = code.trim();
+  if (storeId != null) params.storeId = storeId;
   const res = await api.get('/orders/status', {
-    params: { status, page, size },
+    params,
   });
   return res.data;
 }

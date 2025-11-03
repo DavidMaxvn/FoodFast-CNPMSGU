@@ -58,6 +58,7 @@ import {
   Timeline,
   Visibility
 } from '@mui/icons-material';
+import { formatOrderCodeSuggestion } from '../../utils/orderCode';
 import { 
   getOrdersByStatus, 
   updateOrderStatus, 
@@ -70,7 +71,8 @@ import {
   DroneAssignmentResponse,
   DeliveryTrackingResponse
 } from '../../services/order';
-// import DeliveryTracking from '../../components/DeliveryTracking';
+import TrackingMap from '../../components/TrackingMap';
+import PaginationBar from '../../components/PaginationBar';
 
 // Order status types
 type OrderStatus = 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
@@ -248,6 +250,8 @@ const OrderManagement: React.FC = () => {
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTab, setSelectedTab] = useState<number>(0);
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [filterStore, setFilterStore] = useState<string>('all');
@@ -271,8 +275,8 @@ const OrderManagement: React.FC = () => {
     CREATED: { label: 'Mới tạo', color: 'default', icon: <Receipt /> },
     CONFIRMED: { label: 'Đã xác nhận', color: 'info', icon: <CheckCircle /> },
     PREPARING: { label: 'Đang chuẩn bị', color: 'warning', icon: <Restaurant /> },
-    READY: { label: 'Sẵn sàng giao', color: 'info', icon: <LocalShipping /> },
-    DELIVERING: { label: 'Đang giao', color: 'primary', icon: <LocalShipping /> },
+    READY: { label: 'Sẵn sàng giao', color: 'info', icon: <FlightTakeoff /> },
+    DELIVERING: { label: 'Đang giao', color: 'primary', icon: <FlightTakeoff /> },
     COMPLETED: { label: 'Hoàn thành', color: 'success', icon: <CheckCircle /> },
     CANCELLED: { label: 'Đã hủy', color: 'error', icon: <Cancel /> }
   };
@@ -290,7 +294,7 @@ const OrderManagement: React.FC = () => {
 
   const mapOrderResponse = (o: OrderResponse): Order => ({
     id: o.id,
-    orderCode: String(o.id),
+    orderCode: o.orderCode || formatOrderCodeSuggestion(String(o.id)),
     customerName: '-',
     customerPhone: '-',
     customerAddress: joinAddress(o.address),
@@ -352,8 +356,33 @@ const OrderManagement: React.FC = () => {
       filtered = filtered.filter(order => order.storeName === filterStore);
     }
 
+    // Filter by date range (createdAt)
+    const start = filterStartDate ? new Date(`${filterStartDate}T00:00:00`) : null;
+    const end = filterEndDate ? new Date(`${filterEndDate}T23:59:59`) : null;
+    if (start) {
+      filtered = filtered.filter(order => {
+        const t = new Date(order.createdAt).getTime();
+        return !isNaN(t) && t >= start.getTime();
+      });
+    }
+    if (end) {
+      filtered = filtered.filter(order => {
+        const t = new Date(order.createdAt).getTime();
+        return !isNaN(t) && t <= end.getTime();
+      });
+    }
+
+    // Sort by createdAt descending
+    filtered = filtered.slice().sort((a, b) => {
+      const ta = new Date(a.createdAt).getTime();
+      const tb = new Date(b.createdAt).getTime();
+      const va = isNaN(ta) ? 0 : ta;
+      const vb = isNaN(tb) ? 0 : tb;
+      return vb - va;
+    });
+
     setFilteredOrders(filtered);
-  }, [searchTerm, filterStore, orders]);
+  }, [searchTerm, filterStore, filterStartDate, filterEndDate, orders]);
 
   const handleViewDetails = async (order: Order) => {
     setSelectedOrder(order);
@@ -595,6 +624,22 @@ const OrderManagement: React.FC = () => {
               {stores.map(store => (<MenuItem key={store} value={store}>{store}</MenuItem>))}
             </Select>
           </FormControl>
+          <TextField
+            label="Từ ngày"
+            type="date"
+            value={filterStartDate}
+            onChange={(e) => setFilterStartDate(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 180 }}
+          />
+          <TextField
+            label="Đến ngày"
+            type="date"
+            value={filterEndDate}
+            onChange={(e) => setFilterEndDate(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 180 }}
+          />
         </Box>
 
         <Tabs value={selectedTab} onChange={(_, v) => { setSelectedTab(v); setPage(0); }} variant="scrollable">
@@ -704,9 +749,8 @@ const OrderManagement: React.FC = () => {
                         </Tooltip>
                       )} */}
                       
-                      {/* Delivery Tracking Button - Show for DELIVERING status */}
-                      {/* Ẩn tính năng theo dõi giao hàng cho demo */}
-                      {/* {order.status === 'DELIVERING' && (
+                      {/* Delivery Tracking Button - Hiển thị khi đang giao hàng */}
+                      {order.status === 'DELIVERING' && (
                         <Tooltip title="Theo dõi giao hàng">
                           <IconButton
                             size="small"
@@ -716,7 +760,7 @@ const OrderManagement: React.FC = () => {
                             <GpsFixed />
                           </IconButton>
                         </Tooltip>
-                      )} */}
+                      )}
                       
                       {nextStatus && (
                         <Tooltip title={`Chuyển sang ${statusConfig[nextStatus].label}`}>
@@ -746,6 +790,21 @@ const OrderManagement: React.FC = () => {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {/* Pagination */}
+      <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Typography color="text.secondary">
+            Tổng: {pageData?.totalElements || 0} • Trang {page + 1}/{pageData?.totalPages || 0}
+          </Typography>
+        </Stack>
+        <PaginationBar
+          page={page}
+          totalPages={pageData?.totalPages || 0}
+          onChange={(p) => setPage(p)}
+          maxButtons={5}
+        />
+      </Box>
 
       {/* Order Detail Dialog */}
       <Dialog open={detailDialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth>
@@ -777,6 +836,9 @@ const OrderManagement: React.FC = () => {
                         <strong>Mã đơn:</strong> {selectedOrder.orderCode}
                       </Typography>
                     </Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>
+                      Gợi ý mã đơn: {formatOrderCodeSuggestion(selectedOrder.id, selectedOrder.createdAt)}
+                    </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <AccessTime fontSize="small" />
                       <Typography variant="body2">
@@ -913,8 +975,8 @@ const OrderManagement: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Delivery Tracking Dialog - Ẩn cho demo vì chưa hoàn thiện */}
-      {/* <Dialog open={trackingDialogOpen} onClose={() => setTrackingDialogOpen(false)} maxWidth="lg" fullWidth>
+      {/* Delivery Tracking Dialog với TrackingMap */}
+      <Dialog open={trackingDialogOpen} onClose={() => setTrackingDialogOpen(false)} maxWidth="lg" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography variant="h6">Theo dõi giao hàng - Đơn hàng #{selectedOrder?.id}</Typography>
@@ -922,21 +984,21 @@ const OrderManagement: React.FC = () => {
         </DialogTitle>
         <DialogContent dividers sx={{ p: 3 }}>
           {selectedOrder && (
-            <DeliveryTracking
-              orderId={selectedOrder.id}
-              onComplete={() => {
+            <TrackingMap
+              orderId={String(selectedOrder.id)}
+              onArrived={() => {
+                try { /* tuỳ chọn: gọi completeDelivery */ } catch {}
                 setTrackingDialogOpen(false);
                 fetchData();
               }}
-              autoRefresh={true}
-              refreshInterval={3000}
+              height={480}
             />
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setTrackingDialogOpen(false)}>Đóng</Button>
         </DialogActions>
-      </Dialog> */}
+      </Dialog>
     </Box>
   );
 };

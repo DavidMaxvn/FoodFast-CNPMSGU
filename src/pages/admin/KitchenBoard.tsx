@@ -20,7 +20,8 @@ import {
   Stack,
   Alert,
   LinearProgress,
-  Tooltip
+  Tooltip,
+  TextField
 } from '@mui/material';
 import {
   Restaurant,
@@ -37,6 +38,7 @@ import {
   LocationOn,
   Phone
 } from '@mui/icons-material';
+import { FlightTakeoff } from '@mui/icons-material';
 
 // Order priority levels
 type Priority = 'URGENT' | 'HIGH' | 'NORMAL';
@@ -176,6 +178,8 @@ const KitchenBoard: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
 
   // Update elapsed time every minute
   useEffect(() => {
@@ -205,7 +209,7 @@ const KitchenBoard: React.FC = () => {
   const typeConfig = {
     DINE_IN: { label: 'Tại chỗ', icon: <Restaurant />, color: 'info' },
     TAKEAWAY: { label: 'Mang đi', icon: <Timer />, color: 'warning' },
-    DELIVERY: { label: 'Giao hàng', icon: <LocalShipping />, color: 'primary' }
+    DELIVERY: { label: 'Giao hàng', icon: <FlightTakeoff />, color: 'primary' }
   };
 
   // Status configuration
@@ -293,10 +297,30 @@ const KitchenBoard: React.FC = () => {
     return `${hours}h ${mins}m`;
   };
 
+  // Apply date range filter and sort by receivedTime desc
+  const filteredSorted = (() => {
+    let list = orders;
+    const start = filterStartDate ? new Date(`${filterStartDate}T00:00:00`) : null;
+    const end = filterEndDate ? new Date(`${filterEndDate}T23:59:59`) : null;
+    if (start) {
+      list = list.filter(o => {
+        const t = new Date(o.receivedTime).getTime();
+        return !isNaN(t) && t >= start.getTime();
+      });
+    }
+    if (end) {
+      list = list.filter(o => {
+        const t = new Date(o.receivedTime).getTime();
+        return !isNaN(t) && t <= end.getTime();
+      });
+    }
+    return list.slice().sort((a, b) => new Date(b.receivedTime).getTime() - new Date(a.receivedTime).getTime());
+  })();
+
   // Group orders by status
-  const pendingOrders = orders.filter(o => o.status === 'PENDING');
-  const preparingOrders = orders.filter(o => o.status === 'PREPARING');
-  const readyOrders = orders.filter(o => o.status === 'READY');
+  const pendingOrders = filteredSorted.filter(o => o.status === 'PENDING');
+  const preparingOrders = filteredSorted.filter(o => o.status === 'PREPARING');
+  const readyOrders = filteredSorted.filter(o => o.status === 'READY');
 
   // Render order card
   const renderOrderCard = (order: KitchenOrder) => {
@@ -491,6 +515,26 @@ const KitchenBoard: React.FC = () => {
           Refresh
         </Button>
       </Box>
+
+      {/* Date Filters */}
+      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
+        <TextField
+          label="Từ ngày"
+          type="date"
+          value={filterStartDate}
+          onChange={(e) => setFilterStartDate(e.target.value)}
+          InputLabelProps={{ shrink: true }}
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          label="Đến ngày"
+          type="date"
+          value={filterEndDate}
+          onChange={(e) => setFilterEndDate(e.target.value)}
+          InputLabelProps={{ shrink: true }}
+          sx={{ minWidth: 180 }}
+        />
+      </Stack>
 
       {/* Success Alert */}
       {showSuccess && (
