@@ -100,10 +100,17 @@ function toVM(order: OrderDTO): OrderVM {
       }))
     : [];
 
+  // Tính tổng tiền: ưu tiên dùng totalAmount từ backend; nếu thiếu hoặc bằng 0 nhưng có item thì tự tính
+  const rawTotal = order.totalAmount;
+  let computedTotal = Number(rawTotal ?? 0);
+  if ((rawTotal == null || computedTotal === 0) && items.length > 0) {
+    computedTotal = items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0);
+  }
+
   return {
     id: String(order.id),
     status: mapBackendToUiStatus(order.status as any),
-    total: Number(order.totalAmount ?? 0),
+    total: computedTotal,
     createdAt: order.createdAt || '',
     items,
   };

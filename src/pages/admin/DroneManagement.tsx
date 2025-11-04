@@ -20,25 +20,17 @@ import {
   DialogContent,
   DialogActions,
   TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Alert,
   Tabs,
   Tab,
-  Badge,
   Tooltip,
   Switch,
   FormControlLabel,
   LinearProgress,
-  Divider,
   Snackbar
 } from '@mui/material';
 import {
   Add,
-  Edit,
-  Delete,
   Flight,
   FlightTakeoff,
   FlightLand,
@@ -61,6 +53,7 @@ import {
 import DroneMap from '../../components/DroneMap';
 import DroneAssignmentService, { DroneStation, AssignmentRequest } from '../../services/droneAssignmentService';
 import DroneManagementService, { DroneFleet as DroneFleetType } from '../../services/droneManagementService';
+import { useWebSocket } from '../../hooks/useWebSocket';
 
 interface DroneFleet {
   id: string;
@@ -85,16 +78,33 @@ interface DroneFleet {
 }
 
 const DroneManagement: React.FC = () => {
+  // New drone form state
+  const [newDrone, setNewDrone] = useState<Partial<DroneFleetType>>({
+    serialNumber: '',
+    model: '',
+    maxPayload: 0,
+    maxRange: 0,
+    homeLat: 0,
+    homeLng: 0,
+    isActive: true,
+    status: 'IDLE'
+  });
+
+  const [creatingDrone, setCreatingDrone] = useState(false);
+
+  // Route for selected drone's delivery
+  const [selectedDroneRoute, setSelectedDroneRoute] = useState<{ lat: number; lng: number; type?: string }[] | null>(null);
+
   const [tabValue, setTabValue] = useState(0);
   const [drones, setDrones] = useState<DroneFleet[]>([]);
   const [stations, setStations] = useState<DroneStation[]>([]);
   const [selectedDrone, setSelectedDrone] = useState<DroneFleet | null>(null);
   const [selectedStation, setSelectedStation] = useState<DroneStation | null>(null);
   const [openDroneDialog, setOpenDroneDialog] = useState(false);
-  const [openStationDialog, setOpenStationDialog] = useState(false);
+  const [_openStationDialog, setOpenStationDialog] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const [_configDialogOpen, setConfigDialogOpen] = useState(false);
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
   const [droneStations, setDroneStations] = useState<DroneStation[]>([]);
   const [assignmentRequest, setAssignmentRequest] = useState<AssignmentRequest | null>(null);
@@ -115,6 +125,17 @@ const DroneManagement: React.FC = () => {
       setSnackbar({ open: true, message: 'Lỗi khi tải dữ liệu trạm drone', severity: 'error' });
     }
   };
+
+  // WebSocket URL (derive from API base) and hook
+  const wsUrl = ((process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080/api').replace(/\/+$/, '')
+    .replace(/\/api$/, '')) + '/api/ws';
+
+  const { isConnected, subscribe, unsubscribe } = useWebSocket({
+    url: wsUrl,
+    onConnect: () => { console.log('WS connected for DroneManagement'); },
+    onDisconnect: () => { console.log('WS disconnected for DroneManagement'); },
+    onError: (err) => { console.warn('WS error DroneManagement', err); }
+  });
 
   const handleAutoAssignment = async () => {
     if (!assignmentRequest) return;
@@ -678,6 +699,140 @@ const DroneManagement: React.FC = () => {
     </Box>
   );
 
+  // When selectedDrone changes, if it has a deliveryId fetch the delivery tracking route
+  useEffect(() => {
+    let mounted = true;
+    const loadRoute = async () => {
+      if (!selectedDrone || !selectedDrone.deliveryId) {
+        if (mounted) setSelectedDroneRoute(null);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const tracking = await DroneManagementService.getDeliveryTracking(selectedDrone.deliveryId);
+        const waypoints = tracking?.waypoints?.map(w => ({ lat: w.lat, lng: w.lng, type: w.type })) || [];
+        if (mounted) setSelectedDroneRoute(waypoints);
+      } catch (err) {
+        console.warn('Failed to load delivery tracking for drone', selectedDrone.id, err);
+        if (mounted) setSelectedDroneRoute(null);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    loadRoute();
+    return () => { mounted = false; };
+  }, [selectedDrone]);
+
+  // Subscribe to real-time updates for selectedDrone
+  useEffect(() => {
+    if (!isConnected || !selectedDrone || !subscribe) return;
+
+    const subs: any[] = [];
+
+    // GPS updates
+    const gpsSub = subscribe('/topic/drone/gps', (update: any) => {
+      try {
+        // update may contain { droneId, deliveryId, latitude, longitude, batteryLevel }
+        if (!update) return;
+        const matches = update.droneId === selectedDrone.id || (selectedDrone.deliveryId && update.deliveryId === selectedDrone.deliveryId);
+        if (matches) {
+          // update drones array and selectedDrone
+          setDrones(prev => prev.map(d => d.id === update.droneId ? { ...d, currentLat: update.latitude ?? d.currentLat, currentLng: update.longitude ?? d.currentLng, batteryLevel: update.batteryLevel ?? d.batteryLevel } : d));
+          setSelectedDrone(prev => prev && prev.id === update.droneId ? { ...prev, currentLat: update.latitude ?? prev.currentLat, currentLng: update.longitude ?? prev.currentLng, batteryLevel: update.batteryLevel ?? prev.batteryLevel } : prev);
+        }
+      } catch (e) {
+        console.warn('Error handling GPS update', e);
+      }
+    });
+    if (gpsSub) subs.push(gpsSub);
+
+    // State/Status updates
+    const stateSub = subscribe('/topic/drone/state', (change: any) => {
+      try {
+        if (!change) return;
+        if (change.droneId === selectedDrone.id) {
+          setDrones(prev => prev.map(d => d.id === change.droneId ? { ...d, status: change.newStatus } : d));
+          setSelectedDrone(prev => prev && prev.id === change.droneId ? { ...prev, status: change.newStatus } : prev);
+        }
+      } catch (e) {
+        console.warn('Error handling state update', e);
+      }
+    });
+    if (stateSub) subs.push(stateSub);
+
+    // Delivery ETA or route updates (optional) - subscribe if topic exists
+    const etaSub = subscribe('/topic/delivery/eta', (eta: any) => {
+      try {
+        if (!eta) return;
+        if (eta.deliveryId && selectedDrone.deliveryId && eta.deliveryId === selectedDrone.deliveryId) {
+          // if server sends waypoints, update
+          if (eta.waypoints && Array.isArray(eta.waypoints)) {
+            const waypoints = eta.waypoints.map((w: any) => ({ lat: w.lat, lng: w.lng, type: w.type }));
+            setSelectedDroneRoute(waypoints);
+          }
+        }
+      } catch (e) {
+        console.warn('Error handling ETA update', e);
+      }
+    });
+    if (etaSub) subs.push(etaSub);
+
+    return () => {
+      subs.forEach(s => unsubscribe && unsubscribe(s));
+    };
+  }, [isConnected, selectedDrone, subscribe, unsubscribe]);
+
+  // Create new drone handler
+  const handleCreateDrone = async () => {
+    try {
+      setCreatingDrone(true);
+      if (!newDrone.serialNumber || !newDrone.model) {
+        setSnackbar({ open: true, message: 'Vui lòng nhập serial và model', severity: 'warning' });
+        return;
+      }
+
+      const created = await DroneManagementService.createDrone(newDrone as any);
+      setSnackbar({ open: true, message: 'Tạo drone thành công', severity: 'success' });
+      setOpenDroneDialog(false);
+      try {
+        await loadDroneData();
+      } catch (e) {
+        setDrones(prev => [created as any, ...prev]);
+      }
+    } catch (err) {
+      console.error('Create drone error:', err);
+      // If create fails (backend/offline), add an optimistic local drone so user can see it on map.
+      const timestamp = Date.now();
+      const localId = `local-${timestamp}`;
+      const lat = Number(newDrone.homeLat ?? 10.77653);
+      const lng = Number(newDrone.homeLng ?? 106.700981);
+      const localDrone: DroneFleet = {
+        id: localId,
+        serialNumber: newDrone.serialNumber || `LOCAL-${timestamp}`,
+        model: newDrone.model || 'Unknown',
+        status: 'IDLE',
+        batteryLevel: 100,
+        currentLat: lat,
+        currentLng: lng,
+        homeLat: Number(newDrone.homeLat ?? lat),
+        homeLng: Number(newDrone.homeLng ?? lng),
+        maxPayload: Number(newDrone.maxPayload ?? 0),
+        maxRange: Number(newDrone.maxRange ?? 0),
+        isActive: !!newDrone.isActive,
+        totalFlights: 0,
+        flightHours: 0
+      } as DroneFleet;
+
+      setDrones(prev => [localDrone, ...prev]);
+      setSnackbar({ open: true, message: 'Không gửi được lên server — đã thêm drone cục bộ để thử nghiệm', severity: 'warning' });
+      setOpenDroneDialog(false);
+    } finally {
+      setCreatingDrone(false);
+    }
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -765,9 +920,36 @@ const DroneManagement: React.FC = () => {
                   <Typography>Tổng chuyến bay: {selectedDrone.totalFlights}</Typography>
                   <Typography>Giờ bay: {selectedDrone.flightHours}h</Typography>
                   <Typography>Bảo trì cuối: {selectedDrone.lastMaintenance}</Typography>
-                  <Typography>Vị trí: {selectedDrone.currentLat.toFixed(4)}, {selectedDrone.currentLng.toFixed(4)}</Typography>
+                  <Typography>Vị trí: {selectedDrone.currentLat?.toFixed(4)}, {selectedDrone.currentLng?.toFixed(4)}</Typography>
                 </Grid>
               </Grid>
+
+              {/* If drone is delivering, load and show route */}
+              <Box sx={{ mt: 2 }}>
+                {selectedDrone.deliveryId ? (
+                  <>
+                    <Typography variant="h6">Đang giao đơn: {selectedDrone.assignedOrderId}</Typography>
+                    <DroneMap
+                      drones={[{
+                        id: selectedDrone.id,
+                        status: selectedDrone.status,
+                        currentLat: selectedDrone.currentLat,
+                        currentLng: selectedDrone.currentLng,
+                        batteryPct: selectedDrone.batteryLevel,
+                        assignedOrderId: selectedDrone.assignedOrderId
+                      }]}
+                      stations={stations.map(s => ({ id: s.id, name: s.name, lat: s.location.lat, lng: s.location.lng, availableDrones: s.availableDrones.length, totalDrones: s.capacity, status: s.status === 'active' ? 'ACTIVE' : 'OFFLINE' }))}
+                      height={300}
+                      showRoutes={true}
+                      selectedDroneId={selectedDrone.id}
+                      route={selectedDroneRoute || undefined}
+                      onDroneClick={() => {}}
+                    />
+                  </>
+                ) : (
+                  <Alert severity="info" sx={{ mt: 2 }}>Drone không đang giao đơn</Alert>
+                )}
+              </Box>
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setSelectedDrone(null)}>Đóng</Button>
@@ -913,8 +1095,79 @@ const DroneManagement: React.FC = () => {
             {snackbar.message}
           </Alert>
         </Snackbar>
-      </Box>
-    );
-  };
-  
-  export default DroneManagement;
+
+      {/* Add Drone Dialog */}
+      <Dialog open={openDroneDialog} onClose={() => setOpenDroneDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Thêm Drone Mới</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label="Serial Number"
+                fullWidth
+                value={newDrone.serialNumber || ''}
+                onChange={(e) => setNewDrone({ ...newDrone, serialNumber: e.target.value })}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label="Model"
+                fullWidth
+                value={newDrone.model || ''}
+                onChange={(e) => setNewDrone({ ...newDrone, model: e.target.value })}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label="Max Payload (kg)"
+                type="number"
+                fullWidth
+                value={newDrone.maxPayload ?? 0}
+                onChange={(e) => setNewDrone({ ...newDrone, maxPayload: Number(e.target.value) })}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label="Max Range (km)"
+                type="number"
+                fullWidth
+                value={newDrone.maxRange ?? 0}
+                onChange={(e) => setNewDrone({ ...newDrone, maxRange: Number(e.target.value) })}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label="Home Lat"
+                type="number"
+                fullWidth
+                value={newDrone.homeLat ?? 0}
+                onChange={(e) => setNewDrone({ ...newDrone, homeLat: Number(e.target.value) })}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label="Home Lng"
+                type="number"
+                fullWidth
+                value={newDrone.homeLng ?? 0}
+                onChange={(e) => setNewDrone({ ...newDrone, homeLng: Number(e.target.value) })}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <FormControlLabel
+                control={<Switch checked={!!newDrone.isActive} onChange={(e) => setNewDrone({ ...newDrone, isActive: e.target.checked })} />}
+                label="Active"
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenDroneDialog(false)}>Hủy</Button>
+          <Button variant="contained" onClick={handleCreateDrone} disabled={creatingDrone}>{creatingDrone ? 'Đang tạo...' : 'Tạo Drone'}</Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
+
+export default DroneManagement;
