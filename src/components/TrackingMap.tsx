@@ -197,6 +197,14 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
     }
   }, [isMounted, droneLocation, targetLocation, isMoving, hasArrived]);
 
+  // Tự động bắt đầu di chuyển khi cả hai điểm hợp lệ (giảm thao tác)
+  useEffect(() => {
+    const ready = isValidPoint(currentDroneLocation) && isValidPoint(targetLocation);
+    if (!isMoving && ready && !hasArrived) {
+      setIsMoving(true);
+    }
+  }, [currentDroneLocation, targetLocation, isMoving, hasArrived]);
+
   // Tự động bật theo dõi khi bắt đầu di chuyển để camera bám drone
   useEffect(() => {
     if (!mapRef.current) return;

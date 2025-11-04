@@ -63,8 +63,10 @@ const backendToUIStatus: Record<string, StatusKey> = {
   CONFIRMED: 'confirmed',
   PREPARING: 'preparing',
   READY_FOR_DELIVERY: 'ready',
+  READY: 'ready', // một số màn dùng READY
   ASSIGNED: 'delivering',
   OUT_FOR_DELIVERY: 'delivering',
+  DELIVERING: 'delivering', // phòng ngừa backend trả DELIVERING
   DELIVERED: 'delivered',
   COMPLETED: 'delivered',
   REJECTED: 'confirmed',
@@ -184,6 +186,77 @@ interface OrderUI {
   paymentStatus?: string;
 }
 
+// --- Helpers for coordinates ---
+const isValidCoord = (lat?: number, lng?: number) => {
+  return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+};
+const normalizePair = (a?: number, b?: number) => {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  const lat = Number(a);
+  const lng = Number(b);
+  // If first value looks like longitude (> 90 magnitude), swap
+  if (Math.abs(lat) > 90 && Math.abs(lng) <= 180) {
+    return { lat: lng, lng: lat };
+  }
+  return { lat, lng };
+};
+
+// HCM center (near District 1: Ben Thanh Market)
+const HCM_CENTER = { lat: 10.776, lng: 106.700 };
+const EARTH_RADIUS_KM = 6371;
+const MAX_RADIUS_KM = 2; // clamp within 2km
+
+const toRad = (deg: number) => (deg * Math.PI) / 180;
+const haversineKm = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const la1 = toRad(a.lat);
+  const la2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  return EARTH_RADIUS_KM * c;
+};
+
+// Clamp a coordinate into a circle of MAX_RADIUS_KM around HCM_CENTER
+const clampToHcmRadius = (p: { lat: number; lng: number } | null) => {
+  if (!p || !isValidCoord(p.lat, p.lng)) return null;
+  const dist = haversineKm(HCM_CENTER, p);
+  if (dist <= MAX_RADIUS_KM) return p;
+  // Project along the bearing from center to point, to the circle boundary
+  // Compute bearing
+  const lat1 = toRad(HCM_CENTER.lat);
+  const lng1 = toRad(HCM_CENTER.lng);
+  const lat2 = toRad(p.lat);
+  const lng2 = toRad(p.lng);
+  const dLng = lng2 - lng1;
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  const bearing = Math.atan2(y, x); // radians
+
+  const angularDistance = MAX_RADIUS_KM / EARTH_RADIUS_KM; // radians
+  const sinAd = Math.sin(angularDistance);
+  const cosAd = Math.cos(angularDistance);
+
+  const sinLat1 = Math.sin(lat1);
+  const cosLat1 = Math.cos(lat1);
+
+  const latClamped = Math.asin(
+    sinLat1 * cosAd + cosLat1 * sinAd * Math.cos(bearing)
+  );
+  const lngClamped =
+    lng1 +
+    Math.atan2(
+      Math.sin(bearing) * sinAd * cosLat1,
+      cosAd - sinLat1 * Math.sin(latClamped)
+    );
+
+  return { lat: (latClamped * 180) / Math.PI, lng: (lngClamped * 180) / Math.PI };
+};
+
 const OrderTracking: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const auth = useSelector((state: RootState) => state.auth);
@@ -229,7 +302,7 @@ const OrderTracking: React.FC = () => {
       const raw = response.data;
       console.log('API response:', raw);
       
-      const statusRaw = (raw.status || '').toString().toUpperCase();
+      const statusRaw = (raw.status || '').toString().trim().toUpperCase();
       const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
       
       
@@ -314,27 +387,57 @@ const OrderTracking: React.FC = () => {
           setOrder(prev => prev ? { ...prev, estimatedDelivery: `${eta} phút` } : prev);
         }
 
-        // Helper: coordinate validity (exclude 0,0 and non-finite)
-        const isValidCoord = (lat?: number, lng?: number) => {
-          return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
-        };
+        // (helpers moved to module scope)
 
         // Update map coordinates if available
         // Hỗ trợ nhiều định dạng field từ backend (track/tracking)
-        const curLat = Number(t.currentLat ?? t?.tracking?.currentLat ?? t.currentLatitude);
-        const curLng = Number(t.currentLng ?? t?.tracking?.currentLng ?? t.currentLongitude);
-        const destLat = Number(t.destinationLat ?? t?.tracking?.destinationLat ?? t.destLat ?? t.destinationLatitude);
-        const destLng = Number(t.destinationLng ?? t?.tracking?.destinationLng ?? t.destLng ?? t.destinationLongitude);
+        const curPair = normalizePair(
+          Number(t.currentLat ?? t?.tracking?.currentLat ?? t.currentLatitude),
+          Number(t.currentLng ?? t?.tracking?.currentLng ?? t.currentLongitude)
+        );
+        const destPair = normalizePair(
+          Number(t.destinationLat ?? t?.tracking?.destinationLat ?? t.destLat ?? t.destinationLatitude),
+          Number(t.destinationLng ?? t?.tracking?.destinationLng ?? t.destLng ?? t.destinationLongitude)
+        );
 
-        if (isValidCoord(curLat, curLng)) {
-          setDroneLocation({ lat: curLat!, lng: curLng! });
+        // Helper: distance km between two coords
+        const kmDistance = (a?: {lat:number;lng:number}|null, b?: {lat:number;lng:number}|null) => {
+          if (!a || !b) return Number.POSITIVE_INFINITY;
+          const R = 6371;
+          const dLat = (b.lat - a.lat) * Math.PI / 180;
+          const dLng = (b.lng - a.lng) * Math.PI / 180;
+          const aa = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(a.lat * Math.PI/180) * Math.cos(b.lat * Math.PI/180) * Math.sin(dLng/2) * Math.sin(dLng/2);
+          const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
+          return R * c;
+        };
+        // Helper: lùi điểm khỏi đích ~150m để mô phỏng tiến dần
+        const backoffFromDest = (dest: {lat:number;lng:number}, meters = 150) => {
+          const dLat = meters / 111000;
+          const dLng = meters / (111000 * Math.max(Math.cos(dest.lat * Math.PI/180), 0.1));
+          return { lat: dest.lat - dLat, lng: dest.lng - dLng };
+        };
+
+        let clampedCur: {lat:number;lng:number} | null = null;
+        let clampedDest: {lat:number;lng:number} | null = null;
+        if (curPair && isValidCoord(curPair.lat, curPair.lng)) {
+          const c = clampToHcmRadius(curPair);
+          if (c) clampedCur = { lat: c.lat, lng: c.lng };
+        }
+        if (destPair && isValidCoord(destPair.lat, destPair.lng)) {
+          const c = clampToHcmRadius(destPair);
+          if (c) clampedDest = { lat: c.lat, lng: c.lng };
         }
 
-        if (isValidCoord(destLat, destLng)) {
-          setCustomerLocation({ lat: destLat!, lng: destLng! });
+        if (clampedDest) setCustomerLocation({ lat: clampedDest.lat, lng: clampedDest.lng });
+        if (clampedCur) {
+          // Nếu đang DELIVERING mà current trùng đích (hoặc rất gần), lùi nhẹ để TrackingMap mô phỏng tiến dần
+          const distKm = kmDistance(clampedCur, clampedDest);
+          const shouldBackoff = uiStatus === 'delivering' && clampedDest && distKm <= 0.02; // ~20m
+          const adjusted = shouldBackoff ? backoffFromDest(clampedDest!) : clampedCur;
+          setDroneLocation({ lat: adjusted.lat, lng: adjusted.lng });
         }
         // Fallback: nếu track thiếu toạ độ, thử /deliveries/{deliveryId}/detail
-        const coordsMissing = !isValidCoord(curLat, curLng) || !isValidCoord(destLat, destLng);
+        const coordsMissing = !curPair || !isValidCoord(curPair.lat, curPair.lng) || !destPair || !isValidCoord(destPair.lat, destPair.lng);
         const deliveryIdFromRaw = raw?.delivery?.id;
         if ((coordsMissing || uiStatus === 'ready') && deliveryIdFromRaw) {
           try {
@@ -344,17 +447,41 @@ const OrderTracking: React.FC = () => {
             const waypoints = (d.waypoints || {}) as Record<string, number[]>;
             const etaSec = Number(d.etaSec);
 
-            if (Array.isArray(cp) && cp.length === 2 && isValidCoord(cp[0], cp[1])) {
-              setDroneLocation({ lat: cp[0], lng: cp[1] });
+            let detailCur: {lat:number;lng:number} | null = null;
+            if (Array.isArray(cp) && cp.length === 2) {
+              const p = normalizePair(cp[0], cp[1]);
+              const c = clampToHcmRadius(p);
+              if (c && isValidCoord(c.lat, c.lng)) {
+                detailCur = { lat: c.lat, lng: c.lng };
+              }
             }
             const w0 = Array.isArray((waypoints as any).W0) ? (waypoints as any).W0 : undefined;
             const w2 = Array.isArray(waypoints.W2) ? waypoints.W2 : undefined;
-            if (w2 && w2.length === 2 && isValidCoord(w2[0], w2[1])) {
-              setCustomerLocation({ lat: w2[0], lng: w2[1] });
+            if (w2 && w2.length === 2) {
+              const p2 = normalizePair(w2[0], w2[1]);
+              const c2 = clampToHcmRadius(p2);
+              if (c2 && isValidCoord(c2.lat, c2.lng)) {
+                setCustomerLocation({ lat: c2.lat, lng: c2.lng });
+                // Nếu current quá gần W2 và còn đang giao, lùi nhẹ để mô phỏng
+                if (detailCur) {
+                  const distKm = kmDistance(detailCur, { lat: c2.lat, lng: c2.lng });
+                  const shouldBackoff = uiStatus === 'delivering' && distKm <= 0.02;
+                  const adjusted = shouldBackoff ? backoffFromDest({ lat: c2.lat, lng: c2.lng }) : detailCur;
+                  setDroneLocation({ lat: adjusted.lat, lng: adjusted.lng });
+                } else if (uiStatus === 'delivering') {
+                  // Không có current rõ ràng mà còn đang giao: đặt gần W2 để TrackingMap tiến dần
+                  const adjusted = backoffFromDest({ lat: c2.lat, lng: c2.lng });
+                  setDroneLocation({ lat: adjusted.lat, lng: adjusted.lng });
+                }
+              }
             }
             // Nếu trạng thái READY, đặt drone tại vị trí cửa hàng (W0)
-            if (uiStatus === 'ready' && w0 && w0.length === 2 && isValidCoord(w0[0], w0[1])) {
-              setDroneLocation({ lat: w0[0], lng: w0[1] });
+            if (uiStatus === 'ready' && w0 && w0.length === 2) {
+              const p0 = normalizePair(w0[0], w0[1]);
+              const c0 = clampToHcmRadius(p0);
+              if (c0 && isValidCoord(c0.lat, c0.lng)) {
+                setDroneLocation({ lat: c0.lat, lng: c0.lng });
+              }
             }
             if (!Number.isNaN(etaSec) && etaSec > 0) {
               const etaMin = Math.round(etaSec / 60);
@@ -393,15 +520,31 @@ const OrderTracking: React.FC = () => {
           setOrder(prev => prev ? { ...prev, estimatedDelivery: eta > 0 ? `${eta} phút` : 'Sắp đến nơi' } : prev);
           setIsArrivingSoon(eta > 0 && eta <= 5);
         }
-        const curLat = Number(t.currentLat);
-        const curLng = Number(t.currentLng);
-        const destLat = Number(t.destinationLat);
-        const destLng = Number(t.destinationLng);
-        if (!Number.isNaN(curLat) && !Number.isNaN(curLng)) {
-          setDroneLocation({ lat: curLat, lng: curLng });
-        }
-        if (!Number.isNaN(destLat) && !Number.isNaN(destLng)) {
-          setCustomerLocation({ lat: destLat, lng: destLng });
+        const curRaw = normalizePair(Number(t.currentLat), Number(t.currentLng));
+        const destRaw = normalizePair(Number(t.destinationLat), Number(t.destinationLng));
+        const cur = clampToHcmRadius(curRaw);
+        const dest = clampToHcmRadius(destRaw);
+        if (dest) setCustomerLocation({ lat: dest.lat, lng: dest.lng });
+        if (cur) {
+          // Làm mượt: nếu gần tới W2, lùi nhẹ để TrackingMap tiến dần
+          const kmDistance = (a?: {lat:number;lng:number}|null, b?: {lat:number;lng:number}|null) => {
+            if (!a || !b) return Number.POSITIVE_INFINITY;
+            const R = 6371;
+            const dLat = (b.lat - a.lat) * Math.PI / 180;
+            const dLng = (b.lng - a.lng) * Math.PI / 180;
+            const aa = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(a.lat * Math.PI/180) * Math.cos(b.lat * Math.PI/180) * Math.sin(dLng/2) * Math.sin(dLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
+            return R * c;
+          };
+          const backoffFromDest = (dest2: {lat:number;lng:number}, meters = 150) => {
+            const dLat = meters / 111000;
+            const dLng = meters / (111000 * Math.max(Math.cos(dest2.lat * Math.PI/180), 0.1));
+            return { lat: dest2.lat - dLat, lng: dest2.lng - dLng };
+          };
+          const distKm = kmDistance({ lat: cur.lat, lng: cur.lng }, dest ? { lat: dest.lat, lng: dest.lng } : null);
+          const shouldBackoff = dest && distKm <= 0.02; // ~20m
+          const adjusted = shouldBackoff ? backoffFromDest({ lat: dest!.lat, lng: dest!.lng }) : { lat: cur.lat, lng: cur.lng };
+          setDroneLocation(adjusted);
         }
       } catch {}
     };
@@ -446,7 +589,7 @@ const OrderTracking: React.FC = () => {
               throw new Error('Order ID mismatch');
             }
 
-            const statusRaw = (raw.status || '').toString().toUpperCase();
+            const statusRaw = (raw.status || '').toString().trim().toUpperCase();
             const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
 
             // Xử lý địa chỉ: có thể là string hoặc object
@@ -722,7 +865,7 @@ const OrderTracking: React.FC = () => {
               </Typography>
             </Box>
             
-            {(order.status === 'ready' || order.status === 'delivering') && (
+            {((order.status === 'ready' || order.status === 'delivering') || activeStep === 4) && (
               <>
                 <Box sx={{ height: 400, borderRadius: 2, overflow: 'hidden', mb: 2, boxShadow: 2 }}>
                   <TrackingMap

@@ -530,8 +530,9 @@ export interface DeliveryTrackingResponse {
 }
 
 // Auto-assign a drone for an order
-export async function assignDroneToOrder(orderId: number): Promise<DroneAssignmentResponse> {
-  const res = await api.post('/drone/assignments/auto', { orderId });
+export async function assignDroneToOrder(orderId: number, start: boolean = true): Promise<DroneAssignmentResponse> {
+  // Gửi thêm cờ 'start' để backend chuyển sang IN_PROGRESS và khởi động mô phỏng ngay
+  const res = await api.post('/drone/assignments/auto', { orderId, start });
   return res.data;
 }
 
