@@ -54,6 +54,67 @@ public class DroneManagementController {
     }
 
     /**
+     * POST /api/drone-management/drones - Tạo drone mới
+     */
+    @PostMapping("/drones")
+    public ResponseEntity<?> createDrone(@RequestBody Map<String, Object> request) {
+        try {
+            // Lấy và validate các trường cơ bản
+            String serial = null;
+            Object serialObj = request.get("serialNumber");
+            if (serialObj == null) serialObj = request.get("serial");
+            if (serialObj != null) serial = String.valueOf(serialObj);
+
+            if (serial == null || serial.isBlank()) {
+                return ResponseEntity.badRequest()
+                    .body(Map.of("error", "serialNumber là bắt buộc"));
+            }
+
+            // Kiểm tra trùng serial (cột unique), tránh lỗi khi insert
+            boolean exists = droneRepository.existsBySerialIgnoreCase(serial);
+            if (exists) {
+                return ResponseEntity.badRequest()
+                    .body(Map.of("error", "serialNumber đã tồn tại"));
+            }
+
+            String model = (String) request.getOrDefault("model", "Unknown");
+
+            Double homeLat = toDouble(request.get("homeLat"));
+            Double homeLng = toDouble(request.get("homeLng"));
+            Double currentLat = toDouble(request.get("currentLat"));
+            Double currentLng = toDouble(request.get("currentLng"));
+            Double battery = toDouble(request.get("batteryLevel"));
+            Double maxPayload = toDouble(request.get("maxPayload"));
+            Double maxRange = toDouble(request.get("maxRange"));
+
+            Drone drone = Drone.builder()
+                .serial(serial)
+                .model(model)
+                .status(Drone.DroneStatus.IDLE)
+                .batteryPct(battery != null ? battery : 100.0)
+                .homeLat(homeLat)
+                .homeLng(homeLng)
+                .currentLat(currentLat != null ? currentLat : homeLat)
+                .currentLng(currentLng != null ? currentLng : homeLng)
+                .maxPayloadKg(maxPayload)
+                .maxRangeKm(maxRange)
+                .lastAssignedAt(null)
+                // Đặt createdAt thủ công để tránh lỗi auditing/nullable
+                .createdAt(java.time.LocalDateTime.now())
+                .build();
+
+            Drone saved = droneRepository.save(drone);
+            Map<String, Object> response = buildDroneResponse(saved);
+            // Trả về trực tiếp shape phù hợp với frontend (DroneFleet)
+            return ResponseEntity.status(201).body(response);
+        } catch (Exception e) {
+            log.error("Error creating drone: {}", e.getMessage());
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * GET /api/drone-management/drones/{id} - Lấy thông tin chi tiết drone
      */
     @GetMapping("/drones/{id}")
@@ -260,7 +321,7 @@ public class DroneManagementController {
         response.put("id", drone.getId());
         response.put("serialNumber", drone.getSerialNumber());
         response.put("model", drone.getModel());
-        response.put("status", drone.getStatus().toString());
+        response.put("status", String.valueOf(drone.getStatus()));
         response.put("batteryLevel", drone.getBatteryPct());
         response.put("currentLat", drone.getCurrentLat());
         response.put("currentLng", drone.getCurrentLng());
@@ -272,11 +333,19 @@ public class DroneManagementController {
         response.put("isActive", drone.getStatus() != Drone.DroneStatus.MAINTENANCE);
         
         // Thêm thông tin assignment hiện tại nếu có
-        Optional<DroneAssignment> currentAssignment = fleetService.getCurrentAssignment(drone.getId());
-        if (currentAssignment.isPresent()) {
-            DroneAssignment assignment = currentAssignment.get();
-            response.put("assignedOrderId", assignment.getOrder().getId());
-            response.put("deliveryId", assignment.getDelivery().getId());
+        try {
+            Optional<DroneAssignment> currentAssignment = fleetService.getCurrentAssignment(drone.getId());
+            if (currentAssignment.isPresent()) {
+                DroneAssignment assignment = currentAssignment.get();
+                if (assignment.getOrder() != null) {
+                    response.put("assignedOrderId", assignment.getOrder().getId());
+                }
+                if (assignment.getDelivery() != null) {
+                    response.put("deliveryId", assignment.getDelivery().getId());
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("getCurrentAssignment failed for drone {}: {}", drone.getId(), ex.getMessage());
         }
         
         return response;
@@ -315,5 +384,18 @@ public class DroneManagementController {
         }
         
         return response;
+    }
+
+    // Helper: chuyển object sang Double an toàn
+    private Double toDouble(Object o) {
+        if (o == null) return null;
+        if (o instanceof Number) return ((Number) o).doubleValue();
+        try {
+            String s = String.valueOf(o);
+            if (s.isBlank()) return null;
+            return Double.parseDouble(s);
+        } catch (Exception ex) {
+            return null;
+        }
     }
 }
