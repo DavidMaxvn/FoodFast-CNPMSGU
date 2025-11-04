@@ -235,6 +235,26 @@ public class OrderServiceImpl implements OrderService {
             }
         }
         
+        // Khi DELIVERED: hoàn thành assignment và đưa drone về IDLE
+        if (status == Order.OrderStatus.DELIVERED) {
+            // Tìm delivery của order này
+            Delivery delivery = order.getDelivery();
+            if (delivery != null && delivery.getDrone() != null) {
+                // Cập nhật delivery status
+                delivery.setStatus(Delivery.DeliveryStatus.COMPLETED);
+                deliveryRepository.save(delivery);
+                
+                // Hoàn thành assignment và đưa drone về IDLE
+                final Drone drone = delivery.getDrone();
+                final Long orderId = order.getId();
+                fleetService.getCurrentAssignment(drone.getId()).ifPresent(assignment -> {
+                    fleetService.completeAssignment(assignment.getId());
+                    log.info("Completed assignment for drone {} when order {} marked as DELIVERED", 
+                            drone.getId(), orderId);
+                });
+            }
+        }
+        
         // Gửi WebSocket notification cho realtime order tracking (trạng thái cuối cùng sau auto-assign nếu có)
         try {
             webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
