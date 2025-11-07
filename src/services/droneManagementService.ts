@@ -245,6 +245,18 @@ class DroneManagementService {
 
     return () => clearInterval(pollInterval);
   }
+
+  // Create a new drone in the fleet
+  async createDrone(payload: Partial<DroneFleet>): Promise<DroneFleet> {
+    try {
+      const response = await this.apiClient.post('/drone-management/drones', payload);
+      return response.data;
+    } catch (error) {
+      console.error('Error creating drone:', error);
+      throw error;
+    }
+  }
 }
 
-export default new DroneManagementService();
+const droneManagementService = new DroneManagementService();
+export default droneManagementService;
