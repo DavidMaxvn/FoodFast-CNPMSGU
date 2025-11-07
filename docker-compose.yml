@@ -1,0 +1,67 @@
+version: "3.8"
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: fastfood_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: fastfood_db
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: appsecret
+      TZ: UTC
+    command: [
+      "mysqld",
+      "--character-set-server=utf8mb4",
+      "--collation-server=utf8mb4_unicode_ci"
+    ]
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "3307:3306"          # host 3307 -> container 3306 (MySQL)
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p123456"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: dothanh881/fastfood-backend:1.0.0
+    container_name: fastfood_backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/fastfood_db?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: appuser
+      SPRING_DATASOURCE_PASSWORD: appsecret
+      # (tùy chọn) bật Hibernate tự tạo bảng:
+      # SPRING_JPA_HIBERNATE_DDL_AUTO: update
+    depends_on:
+      db:
+        condition: service_healthy   # chờ DB sẵn sàng
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        REACT_APP_API_BASE_URL: "/api"
+        REACT_APP_WS_URL: "/ws"
+    image: dothanh881/fastfood-frontend:1.0.0
+    container_name: fastfood_frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"            # host 3000 -> container 3000 (Nginx serve React build)
+    restart: unless-stopped
+
+volumes:
+  db_data:
+
+networks:
+  default:
+    driver: bridge
