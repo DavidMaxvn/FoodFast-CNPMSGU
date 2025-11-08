@@ -48,10 +48,10 @@ public class WebSecurityConfig {
         .requestMatchers(HttpMethod.POST, "/files/**").permitAll()
         // Public menu browsing endpoints
         .requestMatchers(HttpMethod.GET, "/menu/**").permitAll()
-        // Admin menu management endpoints (temporarily allow for testing)
-        .requestMatchers(HttpMethod.POST, "/menu/**").permitAll()
-        .requestMatchers(HttpMethod.PUT, "/menu/**").permitAll()
-        .requestMatchers(HttpMethod.DELETE, "/menu/**").permitAll()
+        // Admin menu management endpoints require authentication
+        .requestMatchers(HttpMethod.POST, "/menu/**").authenticated()
+        .requestMatchers(HttpMethod.PUT, "/menu/**").authenticated()
+        .requestMatchers(HttpMethod.DELETE, "/menu/**").authenticated()
         .requestMatchers(HttpMethod.GET, "/public/**").permitAll()
         // Public store browsing endpoints
         .requestMatchers(HttpMethod.GET, "/stores").permitAll()
