@@ -97,7 +97,11 @@ public class WebSecurityConfig {
     CorsConfiguration configuration = new CorsConfiguration();
 
     // Allow specific origins instead of wildcard to support credentials
-    configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:8080"));
+    configuration.setAllowedOrigins(Arrays.asList(
+      "http://localhost:3000",
+      "http://localhost:8080",
+      "https://*.replit.dev"
+    ));
     configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(Arrays.asList("*"));
     configuration.setAllowCredentials(true); // Enable credentials support
