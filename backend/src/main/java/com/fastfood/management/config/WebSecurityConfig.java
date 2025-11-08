@@ -76,11 +76,20 @@ public class WebSecurityConfig {
   public CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration configuration = new CorsConfiguration();
 
-    // Allow specific origins instead of wildcard to support credentials
-    configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:8080"));
+    String replitDomain = System.getenv("REPLIT_DEV_DOMAIN");
+    if (replitDomain != null && !replitDomain.isEmpty()) {
+      configuration.setAllowedOrigins(Arrays.asList(
+        "https://" + replitDomain,
+        "http://localhost:3000", 
+        "http://localhost:5000"
+      ));
+    } else {
+      configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:5000"));
+    }
+    
     configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(Arrays.asList("*"));
-    configuration.setAllowCredentials(true); // Enable credentials support
+    configuration.setAllowCredentials(true);
     configuration.setExposedHeaders(Arrays.asList("x-auth-token"));
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/**", configuration);
