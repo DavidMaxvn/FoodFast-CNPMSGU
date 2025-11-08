@@ -8,6 +8,7 @@ node_modules/
 
 # Production
 /build
+frontend/build/
 
 # Misc
 .DS_Store
@@ -44,3 +45,17 @@ yarn.lock
 # Build outputs
 dist/
 build/
+
+# Java/Maven
+backend/target/
+*.class
+*.jar
+*.war
+*.ear
+.mtj.tmp/
+hs_err_pid*
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
