@@ -6,9 +6,12 @@ import com.fastfood.management.entity.*;
 import com.fastfood.management.repository.*;
 import java.util.UUID;
 import com.fastfood.management.service.api.OrderService;
+import com.fastfood.management.service.api.FleetService;
+import com.fastfood.management.service.impl.WebSocketService;
 import jakarta.persistence.EntityNotFoundException;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
@@ -18,10 +21,12 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
@@ -31,7 +36,8 @@ public class OrderServiceImpl implements OrderService {
     private final OrderActivityRepository orderActivityRepository;
     private final PaymentRepository paymentRepository;
     private final DeliveryRepository deliveryRepository;
-    // private final WebSocketService webSocketService;
+    private final WebSocketService webSocketService;
+    private final FleetService fleetService;
 
     @Override
     @Transactional
@@ -63,6 +69,13 @@ public class OrderServiceImpl implements OrderService {
                 .note(orderRequest.getNote())
                 .build();
         
+        order = orderRepository.save(order);
+
+        // Generate order code: ORD-YYYYMMDD-ID
+        java.time.LocalDate today = java.time.LocalDate.now();
+        String datePart = today.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+        String code = "ORD-" + datePart + "-" + order.getId();
+        order.setOrderCode(code);
         order = orderRepository.save(order);
         
         // tạo order, tính total 
@@ -120,17 +133,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private void insertPaymentForOrder(Order order) {
-        if (order.getPaymentMethod() == Order.PaymentMethod.COD) {
-            Payment payment = Payment.builder()
-                    .order(order)
-                    .provider("COD")
-                    .amount(order.getTotalAmount())
-                    .transactionReference("COD-" + order.getId() + "-" + UUID.randomUUID().toString().substring(0, 8))
-                    .status(Payment.PaymentStatus.PENDING)
-                    .build();
-            paymentRepository.save(payment);
-            // Không set order PaymentStatus = PAID tại thời điểm tạo đơn COD
-        } else if (order.getPaymentMethod() == Order.PaymentMethod.VNPAY || order.getPaymentMethod() == Order.PaymentMethod.WALLET) {
+        if (order.getPaymentMethod() == Order.PaymentMethod.VNPAY || order.getPaymentMethod() == Order.PaymentMethod.WALLET) {
             String provider = order.getPaymentMethod() == Order.PaymentMethod.VNPAY ? "VNPAY" : "WALLET";
             Payment payment = Payment.builder()
                     .order(order)
@@ -163,21 +166,26 @@ public class OrderServiceImpl implements OrderService {
         
         Order.OrderStatus oldStatus = order.getStatus();
 
-        // RBAC: Chỉ MERCHANT hoặc ADMIN được phép thao tác các trạng thái vận hành bếp/giao hàng
+        // RBAC: Cho phép MERCHANT, STAFF hoặc ADMIN thao tác các trạng thái vận hành bếp/giao hàng
         boolean isAdmin = hasSystemRole(currentUser, Role.ROLE_ADMIN);
         boolean isMerchant = hasSystemRole(currentUser, Role.ROLE_MERCHANT);
-        boolean isOwner = order.getCustomer() != null && order.getCustomer().getId().equals(currentUser.getId());
+        boolean isStaff = hasSystemRole(currentUser, Role.ROLE_STAFF);
+        boolean isOwner = currentUser != null && order.getCustomer() != null && order.getCustomer().getId().equals(currentUser.getId());
 
         switch (status) {
             case CONFIRMED:
             case PREPARING:
             case READY_FOR_DELIVERY:
+            case REJECTED:
+                if (!(isAdmin || isMerchant || isStaff)) {
+                    throw new IllegalStateException("Chỉ nhân viên cửa hàng hoặc admin mới được cập nhật trạng thái bếp");
+                }
+                break;
             case ASSIGNED:
             case OUT_FOR_DELIVERY:
             case DELIVERED:
-            case REJECTED:
-                if (!(isAdmin || isMerchant)) {
-                    throw new IllegalStateException("Chỉ nhân viên cửa hàng hoặc admin mới được cập nhật trạng thái này");
+                if (!isAdmin) {
+                    throw new IllegalStateException("Chỉ admin/hệ thống được cập nhật trạng thái giao hàng (ASSIGNED/OUT_FOR_DELIVERY/DELIVERED)");
                 }
                 break;
             case CANCELLED:
@@ -197,7 +205,6 @@ public class OrderServiceImpl implements OrderService {
              status == Order.OrderStatus.ASSIGNED ||
              status == Order.OrderStatus.OUT_FOR_DELIVERY ||
              status == Order.OrderStatus.DELIVERED)
-            && order.getPaymentMethod() != Order.PaymentMethod.COD
             && order.getPaymentStatus() != Order.PaymentStatus.PAID) {
             throw new IllegalStateException("Đơn chưa thanh toán (PAID), không thể chuyển trạng thái");
         }
@@ -218,30 +225,43 @@ public class OrderServiceImpl implements OrderService {
                 .build();
         orderActivityRepository.save(activity);
 
-        // Tạo Delivery khi đơn chuyển sang READY_FOR_DELIVERY (nếu chưa có)
-        if (status == Order.OrderStatus.READY_FOR_DELIVERY && order.getDelivery() == null) {
-            insertDeliveryForOrder(order);
+        // Khi READY_FOR_DELIVERY: thử tự động gán drone. Nếu không có drone rảnh, tạo Delivery PENDING.
+        if (status == Order.OrderStatus.READY_FOR_DELIVERY) {
+            Optional<DroneAssignment> assignmentOpt = fleetService.autoAssignDrone(order);
+            if (assignmentOpt.isEmpty()) {
+                if (order.getDelivery() == null) {
+                    insertDeliveryForOrder(order);
+                }
+            }
         }
         
-        // Tự động đánh dấu PAID cho COD khi đơn giao thành công
-        if (status == Order.OrderStatus.DELIVERED &&
-                order.getPaymentMethod() == Order.PaymentMethod.COD &&
-                order.getPaymentStatus() != Order.PaymentStatus.PAID) {
-            order.setPaymentStatus(Order.PaymentStatus.PAID);
-            orderRepository.save(order);
-            // Cập nhật Payment record sang COMPLETED
-            List<Payment> payments = paymentRepository.findByOrderId(order.getId());
-            payments.stream()
-                    .filter(p -> "COD".equalsIgnoreCase(p.getProvider()))
-                    .findFirst()
-                    .ifPresent(p -> {
-                        p.setStatus(Payment.PaymentStatus.COMPLETED);
-                        paymentRepository.save(p);
-                    });
+        // Khi DELIVERED: hoàn thành assignment và đưa drone về IDLE
+        if (status == Order.OrderStatus.DELIVERED) {
+            // Tìm delivery của order này
+            Delivery delivery = order.getDelivery();
+            if (delivery != null && delivery.getDrone() != null) {
+                // Cập nhật delivery status
+                delivery.setStatus(Delivery.DeliveryStatus.COMPLETED);
+                deliveryRepository.save(delivery);
+                
+                // Hoàn thành assignment và đưa drone về IDLE
+                final Drone drone = delivery.getDrone();
+                final Long orderId = order.getId();
+                fleetService.getCurrentAssignment(drone.getId()).ifPresent(assignment -> {
+                    fleetService.completeAssignment(assignment.getId());
+                    log.info("Completed assignment for drone {} when order {} marked as DELIVERED", 
+                            drone.getId(), orderId);
+                });
+            }
         }
         
-        // Bỏ gửi WebSocket trong phiên bản cơ bản
-        // webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
+        // Gửi WebSocket notification cho realtime order tracking (trạng thái cuối cùng sau auto-assign nếu có)
+        try {
+            webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
+        } catch (Exception e) {
+            // Không để thất bại WebSocket làm hỏng luồng cập nhật trạng thái
+            log.warn("WebSocket send failed for order {}: {}", order.getId(), e.getMessage());
+        }
         
         return order;
     }
@@ -253,7 +273,7 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new EntityNotFoundException("Order not found"));
         
         // Check if user has access to this order
-        if (!order.getCustomer().getId().equals(currentUser.getId())) {
+        if (currentUser == null || order.getCustomer() == null || !order.getCustomer().getId().equals(currentUser.getId())) {
             throw new IllegalStateException("Access denied: Order does not belong to current user");
         }
         
@@ -277,32 +297,81 @@ public class OrderServiceImpl implements OrderService {
                 .build();
         orderActivityRepository.save(activity);
         
-        // Bỏ gửi WebSocket trong phiên bản cơ bản
-        // webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
+        // Gửi WebSocket notification cho realtime order tracking
+        try {
+            webSocketService.sendOrderStatusUpdate(order.getId(), order.getStatus().name());
+        } catch (Exception e) {
+            log.warn("WebSocket send failed for order {}: {}", order.getId(), e.getMessage());
+        }
     }
     
     @Override
+    @Transactional(readOnly = true)
     public Order getOrderById(Long id, User currentUser) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Order not found"));
         
-        // Check if user has access to this order
-        if (!order.getCustomer().getId().equals(currentUser.getId())) {
-            throw new IllegalStateException("Access denied: Order does not belong to current user");
-        }
+        // Allow owner or system roles to view order
+        boolean isOwner = currentUser != null && order.getCustomer() != null && order.getCustomer().getId().equals(currentUser.getId());
+        boolean hasAdmin = hasSystemRole(currentUser, "ADMIN") || hasSystemRole(currentUser, "ROLE_ADMIN");
+        boolean hasMerchant = hasSystemRole(currentUser, "MERCHANT") || hasSystemRole(currentUser, "ROLE_MERCHANT");
+        boolean hasStaff = hasSystemRole(currentUser, "STAFF") || hasSystemRole(currentUser, "ROLE_STAFF");
+        boolean hasManager = hasSystemRole(currentUser, "MANAGER") || hasSystemRole(currentUser, "ROLE_MANAGER");
         
+        if (!(isOwner || hasAdmin || hasMerchant || hasStaff || hasManager)) {
+            throw new AccessDeniedException("Access denied: not permitted to view this order");
+        }
+
+        // Initialize lazy collections for serialization
+        if (order.getOrderItems() != null) {
+            order.getOrderItems().size();
+        }
         return order;
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<Order> listMyOrders(User currentUser) {
-        return orderRepository.findByCustomerOrderByCreatedAtDesc(currentUser);
+        List<Order> orders = orderRepository.findByCustomerOrderByCreatedAtDesc(currentUser);
+        // Initialize lazy collections to avoid LazyInitializationException during JSON serialization
+        for (Order order : orders) {
+            if (order.getOrderItems() != null) {
+                order.getOrderItems().size();
+            }
+        }
+        return orders;
     }
 
     @Override
     public Page<OrderResponse> getOrdersByStatus(Order.OrderStatus status, Pageable pageable) {
         Page<Order> orders = orderRepository.findByStatus(status, pageable);
         return orders.map(this::mapOrderToResponse);
+    }
+
+    @Override
+    public Page<OrderResponse> getOrdersByStatus(Order.OrderStatus status, Pageable pageable, String code) {
+        if (code != null && !code.trim().isEmpty()) {
+            java.util.Optional<Order> opt = orderRepository.findByOrderCode(code.trim());
+            java.util.List<Order> list = opt.map(java.util.List::of).orElse(java.util.List.of());
+            org.springframework.data.domain.Page<Order> page = new org.springframework.data.domain.PageImpl<>(list, pageable, list.size());
+            return page.map(this::mapOrderToResponse);
+        }
+        return getOrdersByStatus(status, pageable);
+    }
+
+    @Override
+    public Page<OrderResponse> getOrdersByStatus(Order.OrderStatus status, Pageable pageable, String code, Long storeId) {
+        if (code != null && !code.trim().isEmpty()) {
+            java.util.Optional<Order> opt = orderRepository.findByOrderCode(code.trim());
+            java.util.List<Order> list = opt.map(java.util.List::of).orElse(java.util.List.of());
+            org.springframework.data.domain.Page<Order> page = new org.springframework.data.domain.PageImpl<>(list, pageable, list.size());
+            return page.map(this::mapOrderToResponse);
+        }
+        if (storeId != null) {
+            Page<Order> orders = orderRepository.findByStoreIdAndStatus(storeId, status, pageable);
+            return orders.map(this::mapOrderToResponse);
+        }
+        return getOrdersByStatus(status, pageable);
     }
 
     // Helper methods
@@ -372,6 +441,7 @@ public class OrderServiceImpl implements OrderService {
         // For now, return a simple implementation
         OrderResponse response = new OrderResponse();
         response.setId(order.getId());
+        response.setOrderCode(order.getOrderCode());
         response.setStatus(order.getStatus().name());
         response.setTotalAmount(order.getTotalAmount());
         response.setPaymentMethod(order.getPaymentMethod().name());

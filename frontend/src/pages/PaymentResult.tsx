@@ -55,6 +55,14 @@ const PaymentResult: React.FC = () => {
           if (!orderData.orderItems && orderData.items) {
             orderData.orderItems = orderData.items;
           }
+          
+          // Ensure we have the enhanced data structure for order tracking
+          if (!orderData.orderItems || orderData.orderItems.length === 0) {
+            console.warn('No orderItems found in pendingOrder, order tracking may not work properly');
+          }
+          if (!orderData.address) {
+            console.warn('No address found in pendingOrder, order tracking may not work properly');
+          }
         } else {
           orderData = {
             id: newOrderId,
@@ -81,16 +89,6 @@ const PaymentResult: React.FC = () => {
     } else if (orderIdParam) {
       setOrderId(orderIdParam);
       if (status === 'success') {
-        // For COD orders, ensure currentOrder has proper structure
-        const currentOrderData = localStorage.getItem('currentOrder');
-        if (currentOrderData) {
-          const orderData = JSON.parse(currentOrderData);
-          // Ensure orderItems field exists for OrderTracking compatibility
-          if (!orderData.orderItems && orderData.items) {
-            orderData.orderItems = orderData.items;
-          }
-          localStorage.setItem('currentOrder', JSON.stringify(orderData));
-        }
         dispatch(clearCart());
       }
     }
@@ -105,7 +103,7 @@ const PaymentResult: React.FC = () => {
 
   const renderContent = () => {
     const paymentStatus = getPaymentStatus();
-    const methodLabel = isVNPayReturn ? 'Thanh toán qua VNPay' : (paymentMethod === 'vnpay' ? 'Thanh toán qua VNPay' : 'Thanh toán khi nhận hàng');
+    const methodLabel = 'Thanh toán qua VNPay';
     
     switch (paymentStatus) {
       case 'success':
@@ -132,6 +130,7 @@ const PaymentResult: React.FC = () => {
               >
                 Theo dõi đơn hàng
               </Button>
+
               <Button
                 variant="outlined"
                 onClick={() => navigate('/')}

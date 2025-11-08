@@ -20,7 +20,8 @@ import {
   Stack,
   Alert,
   LinearProgress,
-  Tooltip
+  Tooltip,
+  TextField
 } from '@mui/material';
 import {
   Restaurant,
@@ -37,6 +38,7 @@ import {
   LocationOn,
   Phone
 } from '@mui/icons-material';
+import { FlightTakeoff } from '@mui/icons-material';
 
 // Order priority levels
 type Priority = 'URGENT' | 'HIGH' | 'NORMAL';
@@ -176,6 +178,8 @@ const KitchenBoard: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
 
   // Update elapsed time every minute
   useEffect(() => {
@@ -196,24 +200,24 @@ const KitchenBoard: React.FC = () => {
 
   // Priority configuration
   const priorityConfig: Record<Priority, { label: string; color: any; bgcolor: string }> = {
-    URGENT: { label: 'Urgent', color: 'error', bgcolor: '#ffebee' },
-    HIGH: { label: 'High', color: 'warning', bgcolor: '#fff3e0' },
-    NORMAL: { label: 'Normal', color: 'success', bgcolor: '#e8f5e9' }
+    URGENT: { label: 'Khẩn cấp', color: 'error', bgcolor: '#ffebee' },
+    HIGH: { label: 'Cao', color: 'warning', bgcolor: '#fff3e0' },
+    NORMAL: { label: 'Bình thường', color: 'success', bgcolor: '#e8f5e9' }
   };
 
   // Order type configuration
   const typeConfig = {
-    DINE_IN: { label: 'Dine In', icon: <Restaurant />, color: 'info' },
-    TAKEAWAY: { label: 'Takeaway', icon: <Timer />, color: 'warning' },
-    DELIVERY: { label: 'Delivery', icon: <LocalShipping />, color: 'primary' }
+    DINE_IN: { label: 'Tại chỗ', icon: <Restaurant />, color: 'info' },
+    TAKEAWAY: { label: 'Mang đi', icon: <Timer />, color: 'warning' },
+    DELIVERY: { label: 'Giao hàng', icon: <FlightTakeoff />, color: 'primary' }
   };
 
   // Status configuration
   const statusConfig = {
-    PENDING: { label: 'Pending', color: 'default', icon: <AccessTime /> },
-    PREPARING: { label: 'Preparing', color: 'warning', icon: <Restaurant /> },
-    READY: { label: 'Ready', color: 'success', icon: <CheckCircle /> },
-    COMPLETED: { label: 'Completed', color: 'default', icon: <Check /> }
+    PENDING: { label: 'Chờ xử lý', color: 'default', icon: <AccessTime /> },
+    PREPARING: { label: 'Đang chuẩn bị', color: 'warning', icon: <Restaurant /> },
+    READY: { label: 'Sẵn sàng', color: 'success', icon: <CheckCircle /> },
+    COMPLETED: { label: 'Hoàn thành', color: 'default', icon: <Check /> }
   };
 
   // Calculate statistics
@@ -293,10 +297,30 @@ const KitchenBoard: React.FC = () => {
     return `${hours}h ${mins}m`;
   };
 
+  // Apply date range filter and sort by receivedTime desc
+  const filteredSorted = (() => {
+    let list = orders;
+    const start = filterStartDate ? new Date(`${filterStartDate}T00:00:00`) : null;
+    const end = filterEndDate ? new Date(`${filterEndDate}T23:59:59`) : null;
+    if (start) {
+      list = list.filter(o => {
+        const t = new Date(o.receivedTime).getTime();
+        return !isNaN(t) && t >= start.getTime();
+      });
+    }
+    if (end) {
+      list = list.filter(o => {
+        const t = new Date(o.receivedTime).getTime();
+        return !isNaN(t) && t <= end.getTime();
+      });
+    }
+    return list.slice().sort((a, b) => new Date(b.receivedTime).getTime() - new Date(a.receivedTime).getTime());
+  })();
+
   // Group orders by status
-  const pendingOrders = orders.filter(o => o.status === 'PENDING');
-  const preparingOrders = orders.filter(o => o.status === 'PREPARING');
-  const readyOrders = orders.filter(o => o.status === 'READY');
+  const pendingOrders = filteredSorted.filter(o => o.status === 'PENDING');
+  const preparingOrders = filteredSorted.filter(o => o.status === 'PREPARING');
+  const readyOrders = filteredSorted.filter(o => o.status === 'READY');
 
   // Render order card
   const renderOrderCard = (order: KitchenOrder) => {
@@ -492,6 +516,26 @@ const KitchenBoard: React.FC = () => {
         </Button>
       </Box>
 
+      {/* Date Filters */}
+      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
+        <TextField
+          label="Từ ngày"
+          type="date"
+          value={filterStartDate}
+          onChange={(e) => setFilterStartDate(e.target.value)}
+          InputLabelProps={{ shrink: true }}
+          sx={{ minWidth: 180 }}
+        />
+        <TextField
+          label="Đến ngày"
+          type="date"
+          value={filterEndDate}
+          onChange={(e) => setFilterEndDate(e.target.value)}
+          InputLabelProps={{ shrink: true }}
+          sx={{ minWidth: 180 }}
+        />
+      </Stack>
+
       {/* Success Alert */}
       {showSuccess && (
         <Alert severity="success" sx={{ mb: 2 }} onClose={() => setShowSuccess(false)}>
@@ -506,7 +550,7 @@ const KitchenBoard: React.FC = () => {
             <Typography variant="h3" fontWeight="bold" color="warning.dark">
               {stats.pending}
             </Typography>
-            <Typography variant="body2" color="text.secondary">Pending</Typography>
+            <Typography variant="body2" color="text.secondary">Chờ xử lý</Typography>
           </Paper>
         </Grid>
         <Grid item xs={6} sm={6} md={2.4}>
@@ -514,7 +558,7 @@ const KitchenBoard: React.FC = () => {
             <Typography variant="h3" fontWeight="bold" color="info.dark">
               {stats.preparing}
             </Typography>
-            <Typography variant="body2" color="text.secondary">Preparing</Typography>
+            <Typography variant="body2" color="text.secondary">Đang chuẩn bị</Typography>
           </Paper>
         </Grid>
         <Grid item xs={6} sm={6} md={2.4}>
@@ -522,7 +566,7 @@ const KitchenBoard: React.FC = () => {
             <Typography variant="h3" fontWeight="bold" color="success.dark">
               {stats.ready}
             </Typography>
-            <Typography variant="body2" color="text.secondary">Ready</Typography>
+            <Typography variant="body2" color="text.secondary">Sẵn sàng</Typography>
           </Paper>
         </Grid>
         <Grid item xs={6} sm={6} md={2.4}>
@@ -552,14 +596,14 @@ const KitchenBoard: React.FC = () => {
           <Paper sx={{ p: 2, bgcolor: 'grey.50', minHeight: 400 }}>
             <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <AccessTime color="warning" />
-              Pending ({pendingOrders.length})
+              Chờ xử lý ({pendingOrders.length})
             </Typography>
             <Divider sx={{ mb: 2 }} />
             {pendingOrders.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
                 <AccessTime sx={{ fontSize: 60, opacity: 0.3 }} />
                 <Typography variant="body2" sx={{ mt: 1 }}>
-                  No pending orders
+                  Không có đơn hàng chờ xử lý
                 </Typography>
               </Box>
             ) : (
@@ -573,14 +617,14 @@ const KitchenBoard: React.FC = () => {
           <Paper sx={{ p: 2, bgcolor: 'grey.50', minHeight: 400 }}>
             <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Restaurant color="info" />
-              Preparing ({preparingOrders.length})
+              Đang chuẩn bị ({preparingOrders.length})
             </Typography>
             <Divider sx={{ mb: 2 }} />
             {preparingOrders.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
                 <Restaurant sx={{ fontSize: 60, opacity: 0.3 }} />
                 <Typography variant="body2" sx={{ mt: 1 }}>
-                  No orders in preparation
+                  Không có đơn hàng đang chuẩn bị
                 </Typography>
               </Box>
             ) : (
@@ -594,14 +638,14 @@ const KitchenBoard: React.FC = () => {
           <Paper sx={{ p: 2, bgcolor: 'grey.50', minHeight: 400 }}>
             <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <CheckCircle color="success" />
-              Ready ({readyOrders.length})
+              Sẵn sàng ({readyOrders.length})
             </Typography>
             <Divider sx={{ mb: 2 }} />
             {readyOrders.length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
                 <CheckCircle sx={{ fontSize: 60, opacity: 0.3 }} />
                 <Typography variant="body2" sx={{ mt: 1 }}>
-                  No ready orders
+                  Không có đơn hàng sẵn sàng
                 </Typography>
               </Box>
             ) : (

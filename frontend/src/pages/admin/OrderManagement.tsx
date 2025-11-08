@@ -1,62 +1,104 @@
 import React, { useState, useEffect } from 'react';
 import {
+  Alert,
+  Avatar,
+  Badge,
   Box,
-  Typography,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  FormControl,
+  Grid,
+  IconButton,
+  InputAdornment,
+  InputLabel,
+  List,
+  ListItem,
+  ListItemText,
+  MenuItem,
   Paper,
+  Select,
+  SelectChangeEvent,
+  Stack,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Chip,
-  Button,
-  Grid,
-  Card,
-  CardContent,
-  TextField,
-  InputAdornment,
   Tabs,
-  Tab,
-  Badge,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  List,
-  ListItem,
-  ListItemText,
-  Divider,
-  Avatar,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
+  TextField,
   Tooltip,
-  Alert,
-  Stack,
-  SelectChangeEvent
+  Typography
 } from '@mui/material';
 import {
-  Search,
-  Visibility,
-  CheckCircle,
-  LocalShipping,
-  Restaurant,
-  Cancel,
-  Refresh,
-  FilterList,
-  Receipt,
   AccessTime,
+  Cancel,
+  CheckCircle,
+  FilterList,
+  FlightTakeoff,
+  GpsFixed,
+  LocalShipping,
+  LocationOn,
+  Payment,
   Person,
   Phone,
-  LocationOn,
-  Payment
+  Receipt,
+  Refresh,
+  Restaurant,
+  Search,
+  Timeline,
+  Visibility
 } from '@mui/icons-material';
+import { formatOrderCodeSuggestion } from '../../utils/orderCode';
+import { 
+  getOrdersByStatus, 
+  updateOrderStatus, 
+  getOrderById, 
+  OrderResponse, 
+  Page, 
+  OrderDTO,
+  assignDroneToOrder,
+  completeDelivery,
+  DroneAssignmentResponse,
+  DeliveryTrackingResponse
+} from '../../services/order';
+import TrackingMap from '../../components/TrackingMap';
+import PaginationBar from '../../components/PaginationBar';
 
 // Order status types
-type OrderStatus = 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
+type OrderStatus = 'CREATED' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'DELIVERING' | 'COMPLETED' | 'CANCELLED';
+
+// Map UI status <-> backend status
+const uiToBackendStatus: Record<OrderStatus, string> = {
+  CREATED: 'CREATED',
+  CONFIRMED: 'CONFIRMED',
+  PREPARING: 'PREPARING',
+  READY: 'READY_FOR_DELIVERY',
+  DELIVERING: 'OUT_FOR_DELIVERY',
+  COMPLETED: 'DELIVERED',
+  CANCELLED: 'CANCELLED',
+};
+const backendToUIStatus: Record<string, OrderStatus> = {
+  CREATED: 'CREATED',
+  CONFIRMED: 'CONFIRMED',
+  PREPARING: 'PREPARING',
+  READY_FOR_DELIVERY: 'READY',
+  ASSIGNED: 'READY',
+  OUT_FOR_DELIVERY: 'DELIVERING',
+  DELIVERED: 'COMPLETED',
+  REJECTED: 'CANCELLED',
+  CANCELLED: 'CANCELLED',
+  FAILED: 'CANCELLED',
+};
 
 // Mock data structure
 interface OrderItem {
@@ -82,6 +124,10 @@ interface Order {
   note?: string;
   items: OrderItem[];
   storeName: string;
+  // Drone tracking information
+  droneId?: number;
+  deliveryId?: number;
+  deliveryTracking?: DeliveryTrackingResponse;
 }
 
 // Mock orders data
@@ -200,25 +246,83 @@ const MOCK_ORDERS: Order[] = [
 ];
 
 const OrderManagement: React.FC = () => {
-  const [orders, setOrders] = useState<Order[]>(MOCK_ORDERS);
-  const [filteredOrders, setFilteredOrders] = useState<Order[]>(MOCK_ORDERS);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTab, setSelectedTab] = useState<number>(0);
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [filterStore, setFilterStore] = useState<string>('all');
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [showError, setShowError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(10);
+  const [loading, setLoading] = useState(false);
+  const [pageData, setPageData] = useState<Page<OrderResponse> | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  
+  // Drone tracking states
+  const [trackingDialogOpen, setTrackingDialogOpen] = useState(false);
+  const [droneAssigning, setDroneAssigning] = useState<number | null>(null);
 
   // Status configuration
   const statusConfig: Record<OrderStatus, { label: string; color: any; icon: any }> = {
     CREATED: { label: 'Mới tạo', color: 'default', icon: <Receipt /> },
     CONFIRMED: { label: 'Đã xác nhận', color: 'info', icon: <CheckCircle /> },
     PREPARING: { label: 'Đang chuẩn bị', color: 'warning', icon: <Restaurant /> },
-    DELIVERING: { label: 'Đang giao', color: 'primary', icon: <LocalShipping /> },
+    READY: { label: 'Sẵn sàng giao', color: 'info', icon: <FlightTakeoff /> },
+    DELIVERING: { label: 'Đang giao', color: 'primary', icon: <FlightTakeoff /> },
     COMPLETED: { label: 'Hoàn thành', color: 'success', icon: <CheckCircle /> },
     CANCELLED: { label: 'Đã hủy', color: 'error', icon: <Cancel /> }
   };
+
+  const statusTabs: OrderStatus[] = ['CREATED','CONFIRMED','PREPARING','DELIVERING','COMPLETED','CANCELLED'];
+  // Thêm trạng thái READY để lọc riêng các đơn sẵn sàng giao
+  const statusTabsReady: OrderStatus[] = ['CREATED','CONFIRMED','PREPARING','READY','DELIVERING','COMPLETED','CANCELLED'];
+  const currentStatus: OrderStatus = statusTabsReady[selectedTab];
+
+  const joinAddress = (addr: any): string => {
+    if (!addr) return '-';
+    const parts = [addr.line1, addr.ward, addr.district, addr.city].filter(Boolean);
+    return parts.join(', ');
+  };
+
+  const mapOrderResponse = (o: OrderResponse): Order => ({
+    id: o.id,
+    orderCode: o.orderCode || formatOrderCodeSuggestion(String(o.id)),
+    customerName: '-',
+    customerPhone: '-',
+    customerAddress: joinAddress(o.address),
+    status: backendToUIStatus[(o.status as any) || 'CREATED'] as OrderStatus,
+    totalAmount: Number(o.totalAmount || 0),
+    paymentMethod: o.paymentMethod || 'COD',
+    paymentStatus: (o.paymentStatus as any) || 'PENDING',
+    createdAt: String(o.createdAt || ''),
+    updatedAt: String(o.updatedAt || ''),
+    note: o.note,
+    items: (o.items || []).map(it => ({ id: it.id, menuItemName: it.menuItemName || `Item ${it.menuItemId}`, quantity: it.quantity, unitPrice: Number(it.unitPrice || 0) })),
+    storeName: '-',
+  });
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const res = await getOrdersByStatus(uiToBackendStatus[currentStatus], page, size);
+      setPageData(res);
+      setOrders((res.content || []).map(mapOrderResponse));
+    } catch (e) {
+      // noop
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); /* eslint-disable-next-line */ }, [currentStatus, page, size]);
 
   // Calculate statistics
   const stats = {
@@ -234,34 +338,17 @@ const OrderManagement: React.FC = () => {
   };
 
   // Get unique stores
-  const stores = Array.from(new Set(orders.map(o => o.storeName)));
+  const stores = Array.from(new Set(orders.map(o => o.storeName).filter(s => s && s !== '-')));
 
   // Filter orders
   useEffect(() => {
     let filtered = orders;
 
-    // Filter by search term
+    // Filter by search term (ID/code)
     if (searchTerm) {
       filtered = filtered.filter(order =>
-        order.orderCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.customerPhone.includes(searchTerm)
+        String(order.orderCode).toLowerCase().includes(searchTerm.toLowerCase())
       );
-    }
-
-    // Filter by status tab
-    const statusMap: Record<number, OrderStatus[]> = {
-      0: ['CREATED', 'CONFIRMED', 'PREPARING', 'DELIVERING', 'COMPLETED', 'CANCELLED'], // All
-      1: ['CREATED'],
-      2: ['CONFIRMED'],
-      3: ['PREPARING'],
-      4: ['DELIVERING'],
-      5: ['COMPLETED'],
-      6: ['CANCELLED']
-    };
-    
-    if (statusMap[selectedTab]) {
-      filtered = filtered.filter(order => statusMap[selectedTab].includes(order.status));
     }
 
     // Filter by store
@@ -269,36 +356,153 @@ const OrderManagement: React.FC = () => {
       filtered = filtered.filter(order => order.storeName === filterStore);
     }
 
-    setFilteredOrders(filtered);
-  }, [searchTerm, selectedTab, filterStore, orders]);
+    // Filter by date range (createdAt)
+    const start = filterStartDate ? new Date(`${filterStartDate}T00:00:00`) : null;
+    const end = filterEndDate ? new Date(`${filterEndDate}T23:59:59`) : null;
+    if (start) {
+      filtered = filtered.filter(order => {
+        const t = new Date(order.createdAt).getTime();
+        return !isNaN(t) && t >= start.getTime();
+      });
+    }
+    if (end) {
+      filtered = filtered.filter(order => {
+        const t = new Date(order.createdAt).getTime();
+        return !isNaN(t) && t <= end.getTime();
+      });
+    }
 
-  const handleViewDetails = (order: Order) => {
+    // Sort by createdAt descending
+    filtered = filtered.slice().sort((a, b) => {
+      const ta = new Date(a.createdAt).getTime();
+      const tb = new Date(b.createdAt).getTime();
+      const va = isNaN(ta) ? 0 : ta;
+      const vb = isNaN(tb) ? 0 : tb;
+      return vb - va;
+    });
+
+    setFilteredOrders(filtered);
+  }, [searchTerm, filterStore, filterStartDate, filterEndDate, orders]);
+
+  const handleViewDetails = async (order: Order) => {
     setSelectedOrder(order);
     setDetailDialogOpen(true);
+    setDetailError(null);
+    setDetailLoading(true);
+    try {
+      const detail: OrderDTO = await getOrderById(0, order.id);
+      const items: OrderItem[] = (detail.orderItems || []).map((it) => ({
+        id: Number(it.id),
+        menuItemName: it.menuItem?.name || 'Sản phẩm',
+        quantity: Number(it.quantity || 0),
+        unitPrice: Number(it.unitPrice ?? it.menuItem?.price ?? 0),
+        imageUrl: it.menuItem?.imageUrl || undefined,
+      }));
+      setSelectedOrder((prev) => prev ? {
+        ...prev,
+        totalAmount: Number(detail.totalAmount ?? prev.totalAmount),
+        paymentMethod: detail.paymentMethod || prev.paymentMethod,
+        paymentStatus: (detail.paymentStatus as any) || prev.paymentStatus,
+        createdAt: detail.createdAt || prev.createdAt,
+        customerAddress: joinAddress(detail.address) || prev.customerAddress,
+        items,
+      } : { ...order, items });
+    } catch (e: any) {
+      setDetailError(e?.response?.data?.message || 'Không tải được chi tiết đơn hàng');
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
-  const handleCloseDialog = () => {
-    setDetailDialogOpen(false);
-    setSelectedOrder(null);
+  const handleCloseDialog = () => { setDetailDialogOpen(false); setSelectedOrder(null); };
+
+  // Tính trạng thái backend mục tiêu từ UI hiện tại và UI tiếp theo
+  const computeTargetBackendStatus = (currentUi: OrderStatus, nextUi: OrderStatus): string | null => {
+    if (currentUi === 'PREPARING' && nextUi === 'DELIVERING') return 'READY_FOR_DELIVERY';
+    if (currentUi === 'DELIVERING' && nextUi === 'COMPLETED') return 'DELIVERED';
+    return uiToBackendStatus[nextUi] || null;
   };
 
-  const handleUpdateStatus = (orderId: number, newStatus: OrderStatus) => {
-    const updatedOrders = orders.map(order =>
-      order.id === orderId
-        ? { ...order, status: newStatus, updatedAt: new Date().toISOString() }
-        : order
-    );
-    setOrders(updatedOrders);
-    setSuccessMessage(`Đã cập nhật trạng thái đơn hàng thành ${statusConfig[newStatus].label}`);
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+  const handleUpdateStatus = async (orderId: number, currentStatus: OrderStatus, nextStatus: OrderStatus) => {
+    const target = computeTargetBackendStatus(currentStatus, nextStatus);
+    if (!target) return;
+    try {
+      await updateOrderStatus(orderId, target);
+      
+      // Auto-assign drone when status changes to READY_FOR_DELIVERY
+      if (target === 'READY_FOR_DELIVERY') {
+        try {
+          setDroneAssigning(orderId);
+          const droneAssignment = await assignDroneToOrder(orderId);
+          setSuccessMessage(`Đã cập nhật trạng thái và gán drone #${droneAssignment.droneId} cho đơn hàng`);
+        } catch (droneError: any) {
+          setSuccessMessage(`Đã cập nhật trạng thái thành ${statusConfig[nextStatus].label}. Lỗi gán drone: ${droneError?.response?.data?.message || 'Không thể gán drone'}`);
+        } finally {
+          setDroneAssigning(null);
+        }
+      } else {
+        setSuccessMessage(`Đã cập nhật trạng thái đơn hàng thành ${statusConfig[nextStatus].label}`);
+      }
+      
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+      fetchData();
+    } catch (e: any) {
+      setErrorMessage(e?.response?.data?.message || 'Cập nhật trạng thái thất bại');
+      setShowError(true);
+      setTimeout(() => setShowError(false), 4000);
+    }
+  };
+
+  // Handle drone assignment manually
+  const handleAssignDrone = async (orderId: number) => {
+    try {
+      setDroneAssigning(orderId);
+      const result = await assignDroneToOrder(orderId);
+      setSuccessMessage(`Đã gán drone #${result.droneId} cho đơn hàng #${orderId}`);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+      fetchData();
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || 'Không thể gán drone');
+      setShowError(true);
+      setTimeout(() => setShowError(false), 4000);
+    } finally {
+      setDroneAssigning(null);
+    }
+  };
+
+  // Handle delivery tracking
+  const handleViewTracking = (orderId: number) => {
+    const order = orders.find(o => o.id === orderId);
+    if (order) {
+      setSelectedOrder(order);
+      setTrackingDialogOpen(true);
+    }
+  };
+
+  // Handle complete delivery
+  const handleCompleteDelivery = async (orderId: number) => {
+    try {
+      await completeDelivery(orderId);
+      setSuccessMessage('Đã hoàn thành giao hàng');
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+      setTrackingDialogOpen(false);
+      fetchData();
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || 'Không thể hoàn thành giao hàng');
+      setShowError(true);
+      setTimeout(() => setShowError(false), 4000);
+    }
   };
 
   const getNextStatus = (currentStatus: OrderStatus): OrderStatus | null => {
     const flow: Record<OrderStatus, OrderStatus | null> = {
       CREATED: 'CONFIRMED',
       CONFIRMED: 'PREPARING',
-      PREPARING: 'DELIVERING',
+      PREPARING: 'READY',
+      READY: 'DELIVERING',
       DELIVERING: 'COMPLETED',
       COMPLETED: null,
       CANCELLED: null
@@ -306,13 +510,8 @@ const OrderManagement: React.FC = () => {
     return flow[currentStatus];
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
-  };
-
-  const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString('vi-VN');
-  };
+  const formatCurrency = (amount: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+  const formatDateTime = (dateString: string) => new Date(dateString).toLocaleString('vi-VN');
 
   return (
     <Box sx={{ p: 3 }}>
@@ -324,16 +523,21 @@ const OrderManagement: React.FC = () => {
         <Button
           variant="outlined"
           startIcon={<Refresh />}
-          onClick={() => setOrders([...MOCK_ORDERS])}
+          onClick={fetchData}
         >
           Refresh
         </Button>
       </Box>
 
-      {/* Success Alert */}
+      {/* Success/Error Alerts */}
       {showSuccess && (
         <Alert severity="success" sx={{ mb: 2 }} onClose={() => setShowSuccess(false)}>
           {successMessage}
+        </Alert>
+      )}
+      {showError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setShowError(false)}>
+          {errorMessage}
         </Alert>
       )}
 
@@ -403,16 +607,10 @@ const OrderManagement: React.FC = () => {
         <Box sx={{ p: 2, display: 'flex', gap: 2, alignItems: 'center' }}>
           <TextField
             fullWidth
-            placeholder="Tìm kiếm theo mã đơn, tên khách, SĐT..."
+            placeholder="Tìm theo mã đơn (ID)"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <Search />
-                </InputAdornment>
-              ),
-            }}
+            InputProps={{ startAdornment: (<InputAdornment position="start"><Search /></InputAdornment>) }}
           />
           <FormControl sx={{ minWidth: 200 }}>
             <InputLabel>Cửa hàng</InputLabel>
@@ -423,27 +621,41 @@ const OrderManagement: React.FC = () => {
               startAdornment={<FilterList sx={{ mr: 1, color: 'action.active' }} />}
             >
               <MenuItem value="all">Tất cả cửa hàng</MenuItem>
-              {stores.map(store => (
-                <MenuItem key={store} value={store}>{store}</MenuItem>
-              ))}
+              {stores.map(store => (<MenuItem key={store} value={store}>{store}</MenuItem>))}
             </Select>
           </FormControl>
+          <TextField
+            label="Từ ngày"
+            type="date"
+            value={filterStartDate}
+            onChange={(e) => setFilterStartDate(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 180 }}
+          />
+          <TextField
+            label="Đến ngày"
+            type="date"
+            value={filterEndDate}
+            onChange={(e) => setFilterEndDate(e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 180 }}
+          />
         </Box>
 
-        <Tabs value={selectedTab} onChange={(_, newValue) => setSelectedTab(newValue)} variant="scrollable">
-          <Tab label={`Tất cả (${stats.total})`} />
-          <Tab label={<Badge badgeContent={stats.created} color="default">Mới tạo</Badge>} />
-          <Tab label={<Badge badgeContent={stats.confirmed} color="info">Đã xác nhận</Badge>} />
-          <Tab label={<Badge badgeContent={stats.preparing} color="warning">Đang chuẩn bị</Badge>} />
-          <Tab label={<Badge badgeContent={stats.delivering} color="primary">Đang giao</Badge>} />
-          <Tab label={<Badge badgeContent={stats.completed} color="success">Hoàn thành</Badge>} />
-          <Tab label={<Badge badgeContent={stats.cancelled} color="error">Đã hủy</Badge>} />
+        <Tabs value={selectedTab} onChange={(_, v) => { setSelectedTab(v); setPage(0); }} variant="scrollable">
+          <Tab label={statusConfig.CREATED.label} />
+          <Tab label={statusConfig.CONFIRMED.label} />
+          <Tab label={statusConfig.PREPARING.label} />
+          <Tab label={statusConfig.READY.label} />
+          <Tab label={statusConfig.DELIVERING.label} />
+          <Tab label={statusConfig.COMPLETED.label} />
+          <Tab label={statusConfig.CANCELLED.label} />
         </Tabs>
       </Paper>
 
       {/* Orders Table */}
       <TableContainer component={Paper}>
-        <Table>
+        <Table stickyHeader>
           <TableHead>
             <TableRow>
               <TableCell>Mã đơn</TableCell>
@@ -522,12 +734,40 @@ const OrderManagement: React.FC = () => {
                           <Visibility />
                         </IconButton>
                       </Tooltip>
+                      
+                      {/* Ẩn Drone Assignment Button cho demo - chỉ dùng auto-assign */}
+                      {/* {order.status === 'READY' && (
+                        <Tooltip title="Gán drone">
+                          <IconButton
+                            size="small"
+                            color="secondary"
+                            disabled={droneAssigning === order.id}
+                            onClick={() => handleAssignDrone(order.id)}
+                          >
+                            {droneAssigning === order.id ? <CircularProgress size={16} /> : <FlightTakeoff />}
+                          </IconButton>
+                        </Tooltip>
+                      )} */}
+                      
+                      {/* Delivery Tracking Button - Hiển thị khi đang giao hàng */}
+                      {order.status === 'DELIVERING' && (
+                        <Tooltip title="Theo dõi giao hàng">
+                          <IconButton
+                            size="small"
+                            color="warning"
+                            onClick={() => handleViewTracking(order.id)}
+                          >
+                            <GpsFixed />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      
                       {nextStatus && (
                         <Tooltip title={`Chuyển sang ${statusConfig[nextStatus].label}`}>
                           <IconButton
                             size="small"
                             color="primary"
-                            onClick={() => handleUpdateStatus(order.id, nextStatus)}
+                            onClick={() => handleUpdateStatus(order.id, order.status, nextStatus)}
                           >
                             {statusConfig[nextStatus].icon}
                           </IconButton>
@@ -542,7 +782,7 @@ const OrderManagement: React.FC = () => {
               <TableRow>
                 <TableCell colSpan={8} align="center">
                   <Typography variant="body2" color="text.secondary" sx={{ py: 3 }}>
-                    Không tìm thấy đơn hàng nào
+                    {loading ? 'Đang tải...' : 'Không tìm thấy đơn hàng nào'}
                   </Typography>
                 </TableCell>
               </TableRow>
@@ -550,6 +790,21 @@ const OrderManagement: React.FC = () => {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {/* Pagination */}
+      <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Typography color="text.secondary">
+            Tổng: {pageData?.totalElements || 0} • Trang {page + 1}/{pageData?.totalPages || 0}
+          </Typography>
+        </Stack>
+        <PaginationBar
+          page={page}
+          totalPages={pageData?.totalPages || 0}
+          onChange={(p) => setPage(p)}
+          maxButtons={5}
+        />
+      </Box>
 
       {/* Order Detail Dialog */}
       <Dialog open={detailDialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth>
@@ -581,6 +836,9 @@ const OrderManagement: React.FC = () => {
                         <strong>Mã đơn:</strong> {selectedOrder.orderCode}
                       </Typography>
                     </Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>
+                      Gợi ý mã đơn: {formatOrderCodeSuggestion(selectedOrder.id, selectedOrder.createdAt)}
+                    </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <AccessTime fontSize="small" />
                       <Typography variant="body2">
@@ -626,34 +884,53 @@ const OrderManagement: React.FC = () => {
                 </Paper>
               </Grid>
 
+              {/* Loading/Error for items */}
+              {detailLoading && (
+                <Grid item xs={12}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', py: 4 }}>
+                    <CircularProgress size={28} sx={{ mr: 1 }} />
+                    <Typography variant="body2" color="text.secondary">Đang tải chi tiết đơn hàng...</Typography>
+                  </Box>
+                </Grid>
+              )}
+              {detailError && (
+                <Grid item xs={12}>
+                  <Alert severity="error">{detailError}</Alert>
+                </Grid>
+              )}
+
               {/* Order Items */}
-              <Grid item xs={12}>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  Chi tiết món ăn
-                </Typography>
-                <List>
-                  {selectedOrder.items.map((item, index) => (
-                    <React.Fragment key={item.id}>
-                      <ListItem>
-                        <Avatar
-                          src={item.imageUrl}
-                          alt={item.menuItemName}
-                          sx={{ mr: 2 }}
-                          variant="rounded"
-                        />
-                        <ListItemText
-                          primary={item.menuItemName}
-                          secondary={`${formatCurrency(item.unitPrice)} x ${item.quantity}`}
-                        />
-                        <Typography variant="body1" fontWeight="bold">
-                          {formatCurrency(item.unitPrice * item.quantity)}
-                        </Typography>
-                      </ListItem>
-                      {index < selectedOrder.items.length - 1 && <Divider />}
-                    </React.Fragment>
-                  ))}
-                </List>
-              </Grid>
+              {!detailLoading && !detailError && (
+                <Grid item xs={12}>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Chi tiết món ăn
+                  </Typography>
+                  <Paper sx={{ p: 1.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', bgcolor: 'grey.50' }}>
+                    <List>
+                      {selectedOrder.items.map((item, index) => (
+                        <React.Fragment key={item.id}>
+                          <ListItem sx={{ py: 1.5 }}>
+                            <Avatar
+                              src={item.imageUrl}
+                              alt={item.menuItemName}
+                              sx={{ mr: 2, width: 56, height: 56, bgcolor: 'grey.100' }}
+                              variant="rounded"
+                            />
+                            <ListItemText
+                              primary={item.menuItemName}
+                              secondary={`${formatCurrency(item.unitPrice)} x ${item.quantity}`}
+                            />
+                            <Typography variant="body1" fontWeight="bold">
+                              {formatCurrency(item.unitPrice * item.quantity)}
+                            </Typography>
+                          </ListItem>
+                          {index < selectedOrder.items.length - 1 && <Divider />}
+                        </React.Fragment>
+                      ))}
+                    </List>
+                  </Paper>
+                </Grid>
+              )}
 
               {/* Note */}
               {selectedOrder.note && (
@@ -683,10 +960,11 @@ const OrderManagement: React.FC = () => {
           {selectedOrder && getNextStatus(selectedOrder.status) && (
             <Button
               variant="contained"
+              disabled={loading || detailLoading}
               onClick={() => {
                 const nextStatus = getNextStatus(selectedOrder.status);
                 if (nextStatus) {
-                  handleUpdateStatus(selectedOrder.id, nextStatus);
+                  handleUpdateStatus(selectedOrder.id, selectedOrder.status, nextStatus);
                   handleCloseDialog();
                 }
               }}
@@ -694,6 +972,31 @@ const OrderManagement: React.FC = () => {
               Chuyển sang {statusConfig[getNextStatus(selectedOrder.status)!].label}
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Delivery Tracking Dialog với TrackingMap */}
+      <Dialog open={trackingDialogOpen} onClose={() => setTrackingDialogOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="h6">Theo dõi giao hàng - Đơn hàng #{selectedOrder?.id}</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 3 }}>
+          {selectedOrder && (
+            <TrackingMap
+              orderId={String(selectedOrder.id)}
+              onArrived={() => {
+                try { /* tuỳ chọn: gọi completeDelivery */ } catch {}
+                setTrackingDialogOpen(false);
+                fetchData();
+              }}
+              height={480}
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTrackingDialogOpen(false)}>Đóng</Button>
         </DialogActions>
       </Dialog>
     </Box>

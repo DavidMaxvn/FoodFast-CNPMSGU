@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -28,6 +29,7 @@ public class Delivery {
     
     @OneToOne
     @JoinColumn(name = "order_id", unique = true)
+    @JsonBackReference
     private Order order;
     
 
@@ -36,7 +38,7 @@ public class Delivery {
     private Drone drone;
     
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 32)
     private DeliveryStatus status;
     
     // Waypoints for POC simulation
@@ -106,5 +108,23 @@ public class Delivery {
         IN_PROGRESS, // Drone đang thực hiện delivery
         COMPLETED,   // Hoàn thành giao hàng
         FAILED       // Thất bại
+    }
+    
+    // Helper method to get waypoints as a list
+    public List<Double[]> getWaypoints() {
+        List<Double[]> waypoints = new ArrayList<>();
+        if (w0Lat != null && w0Lng != null) {
+            waypoints.add(new Double[]{w0Lat, w0Lng});
+        }
+        if (w1Lat != null && w1Lng != null) {
+            waypoints.add(new Double[]{w1Lat, w1Lng});
+        }
+        if (w2Lat != null && w2Lng != null) {
+            waypoints.add(new Double[]{w2Lat, w2Lng});
+        }
+        if (w3Lat != null && w3Lng != null) {
+            waypoints.add(new Double[]{w3Lat, w3Lng});
+        }
+        return waypoints;
     }
 }

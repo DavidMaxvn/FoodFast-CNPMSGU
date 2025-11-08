@@ -25,6 +25,7 @@ import {
   Kitchen,
   FlightTakeoff,
   GpsFixed,
+  Settings,
   AccountCircle,
   Logout,
   ChevronLeft,
@@ -68,8 +69,10 @@ const AdminLayout: React.FC = () => {
     { text: 'Orders', icon: <ShoppingCart />, path: '/admin/orders' },
     { text: 'Staff', icon: <People />, path: '/admin/staff' },
     { text: 'Kitchen Board', icon: <Kitchen />, path: '/admin/kitchen' },
-    { text: 'Drone Console', icon: <FlightTakeoff />, path: '/admin/drones' },
-    { text: 'Drone Tracking', icon: <GpsFixed />, path: '/admin/drone-tracking' },
+    // Ẩn các tính năng drone chưa hoàn thiện cho demo
+    // { text: 'Drone Console', icon: <FlightTakeoff />, path: '/admin/drones' },
+    // { text: 'Drone Tracking', icon: <GpsFixed />, path: '/admin/drone-tracking' },
+    { text: 'Drone Management', icon: <Settings />, path: '/admin/drone-management' },
     { text: 'Stores', icon: <Storefront />, path: '/admin/stores' },
     { text: 'Store Approvals', icon: <HowToReg />, path: '/admin/store-approvals' },
   ];

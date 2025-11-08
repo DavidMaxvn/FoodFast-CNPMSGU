@@ -10,6 +10,8 @@ import com.fastfood.management.repository.DeliveryRepository;
 import com.fastfood.management.repository.DroneRepository;
 import com.fastfood.management.repository.OrderRepository;
 import com.fastfood.management.service.api.DroneSimulator;
+import com.fastfood.management.service.api.DroneTrackingService;
+import com.fastfood.management.service.api.FleetService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -25,6 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 @RequiredArgsConstructor
@@ -37,9 +40,13 @@ public class DroneSimulatorImpl implements DroneSimulator {
     private final OrderRepository orderRepository;
     private final DeliveryEventRepository eventRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final DroneTrackingService droneTrackingService;
+    private final FleetService fleetService;
     
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(10);
     private final Map<Long, ScheduledFuture<?>> activeSimulations = new ConcurrentHashMap<>();
+    // Mô phỏng chỉ thị đường bay quay về trạm sau khi giao xong (không ảnh hưởng trạng thái đơn/assignment)
+    private final Map<Long, ScheduledFuture<?>> activeReturnVisualizations = new ConcurrentHashMap<>();
     
     @Override
     @Async
@@ -131,14 +138,24 @@ public class DroneSimulatorImpl implements DroneSimulator {
     
     @Override
     public double[] calculateCurrentPosition(Delivery delivery) {
-        String segment = delivery.getCurrentSegment();
+        String segment = delivery.getCurrentSegment() != null ? delivery.getCurrentSegment() : "W0_W1";
         LocalDateTime segmentStart = delivery.getSegmentStartTime();
-        int segmentDuration = droneConfig.getLegDuration(segment);
+        // Nếu thiếu thời điểm bắt đầu segment, đặt về hiện tại để tránh NPE
+        if (segmentStart == null) {
+            segmentStart = LocalDateTime.now();
+            delivery.setSegmentStartTime(segmentStart);
+            try {
+                deliveryRepository.save(delivery);
+            } catch (Exception ignore) {
+                // Không chặn mô phỏng nếu save thất bại
+            }
+        }
+        int segmentDuration = Math.max(1, droneConfig.getLegDuration(segment));
         
         // Tính elapsed time từ khi bắt đầu segment (seconds)
-        long elapsedSeconds = ChronoUnit.SECONDS.between(segmentStart, LocalDateTime.now());
+        long elapsedSeconds = Math.max(0, ChronoUnit.SECONDS.between(segmentStart, LocalDateTime.now()));
         
-        // Tính progress (u) từ 0 đến 1
+        // Tính progress (u) từ 0 đến 1, tránh chia cho 0
         double u = Math.min(1.0, (double) elapsedSeconds / segmentDuration);
         
         // Lấy tọa độ start và end của segment
@@ -154,13 +171,17 @@ public class DroneSimulatorImpl implements DroneSimulator {
     
     @Override
     public int calculateRemainingETA(Delivery delivery) {
-        String segment = delivery.getCurrentSegment();
+        String segment = delivery.getCurrentSegment() != null ? delivery.getCurrentSegment() : "W0_W1";
         LocalDateTime segmentStart = delivery.getSegmentStartTime();
-        int segmentDuration = droneConfig.getLegDuration(segment);
+        int segmentDuration = Math.max(1, droneConfig.getLegDuration(segment));
         
-        // Thời gian còn lại của segment hiện tại
-        long elapsedSeconds = ChronoUnit.SECONDS.between(segmentStart, LocalDateTime.now());
-        int remainingInSegment = Math.max(0, segmentDuration - (int) elapsedSeconds);
+        // Thời gian còn lại của segment hiện tại (nếu thiếu segmentStart -> giả định full duration)
+        long elapsedSeconds = segmentStart != null
+                ? Math.max(0, ChronoUnit.SECONDS.between(segmentStart, LocalDateTime.now()))
+                : 0;
+        int remainingInSegment = segmentStart != null
+                ? Math.max(0, segmentDuration - (int) elapsedSeconds)
+                : segmentDuration;
         
         // Thời gian của các segment còn lại
         int remainingSegments = 0;
@@ -172,7 +193,10 @@ public class DroneSimulatorImpl implements DroneSimulator {
                 remainingSegments = droneConfig.getDwellSecCustomer();
                 break;
             case "DWELL":
-                remainingSegments = delivery.getDwellTicksRemaining() * droneConfig.getGpsTickSec();
+                int dwellTicks = delivery.getDwellTicksRemaining() != null
+                        ? delivery.getDwellTicksRemaining()
+                        : droneConfig.getDwellTicks();
+                remainingSegments = Math.max(0, dwellTicks) * droneConfig.getGpsTickSec();
                 break;
             default:
                 remainingSegments = 0;
@@ -214,7 +238,7 @@ public class DroneSimulatorImpl implements DroneSimulator {
     }
     
     private boolean shouldMoveToNextSegment(Delivery delivery) {
-        String segment = delivery.getCurrentSegment();
+        String segment = delivery.getCurrentSegment() != null ? delivery.getCurrentSegment() : "W0_W1";
         
         if ("DWELL".equals(segment)) {
             // Kiểm tra dwell ticks
@@ -229,8 +253,16 @@ public class DroneSimulatorImpl implements DroneSimulator {
         
         // Kiểm tra thời gian segment
         LocalDateTime segmentStart = delivery.getSegmentStartTime();
-        int segmentDuration = droneConfig.getLegDuration(segment);
-        long elapsedSeconds = ChronoUnit.SECONDS.between(segmentStart, LocalDateTime.now());
+        if (segmentStart == null) {
+            // Nếu thiếu thời điểm bắt đầu thì cho chuyển tiếp để đồng bộ hóa trạng thái
+            delivery.setSegmentStartTime(LocalDateTime.now());
+            try {
+                deliveryRepository.save(delivery);
+            } catch (Exception ignore) {}
+            return true;
+        }
+        int segmentDuration = Math.max(1, droneConfig.getLegDuration(segment));
+        long elapsedSeconds = Math.max(0, ChronoUnit.SECONDS.between(segmentStart, LocalDateTime.now()));
         
         return elapsedSeconds >= segmentDuration;
     }
@@ -239,7 +271,8 @@ public class DroneSimulatorImpl implements DroneSimulator {
         switch (currentSegment) {
             case "W0_W1": return "W1_W2";
             case "W1_W2": return "DWELL";
-            case "DWELL": return null; // Hoàn thành
+            case "DWELL": return null; // Hoàn thành giao hàng tại khách
+            case "W2_W3": return null; // (không dùng nữa nếu kết thúc tại DWELL)
             default: return null;
         }
     }
@@ -255,6 +288,9 @@ public class DroneSimulatorImpl implements DroneSimulator {
             case "DWELL":
                 drone.setStatus(Drone.DroneStatus.ARRIVING);
                 break;
+            case "W2_W3":
+                drone.setStatus(Drone.DroneStatus.RETURN_TO_BASE);
+                break;
         }
     }
     
@@ -263,6 +299,7 @@ public class DroneSimulatorImpl implements DroneSimulator {
             case "W0_W1": return new double[]{delivery.getW0Lat(), delivery.getW0Lng()};
             case "W1_W2": return new double[]{delivery.getW1Lat(), delivery.getW1Lng()};
             case "DWELL": return new double[]{delivery.getW2Lat(), delivery.getW2Lng()};
+            case "W2_W3": return new double[]{delivery.getW2Lat(), delivery.getW2Lng()};
             default: return new double[]{0.0, 0.0};
         }
     }
@@ -272,35 +309,91 @@ public class DroneSimulatorImpl implements DroneSimulator {
             case "W0_W1": return new double[]{delivery.getW1Lat(), delivery.getW1Lng()};
             case "W1_W2": return new double[]{delivery.getW2Lat(), delivery.getW2Lng()};
             case "DWELL": return new double[]{delivery.getW2Lat(), delivery.getW2Lng()};
+            case "W2_W3": return new double[]{delivery.getW3Lat(), delivery.getW3Lng()};
             default: return new double[]{0.0, 0.0};
         }
     }
     
     private void completeDelivery(Delivery delivery) {
-        // Cập nhật trạng thái
+        // Đánh dấu đơn giao hoàn tất
         delivery.setStatus(Delivery.DeliveryStatus.COMPLETED);
         deliveryRepository.save(delivery);
-        
+
         // Cập nhật order
         Order order = delivery.getOrder();
         order.setStatus(Order.OrderStatus.DELIVERED);
         orderRepository.save(order);
-        
-        // Cập nhật drone
+
+        // Hoàn tất assignment và đưa drone về IDLE qua FleetService
         Drone drone = delivery.getDrone();
-        drone.setStatus(Drone.DroneStatus.IDLE);
-        droneRepository.save(drone);
-        
+        fleetService.getCurrentAssignment(drone.getId()).ifPresent(assignment -> {
+            fleetService.completeAssignment(assignment.getId());
+        });
+
         // Dừng simulation
         stopSimulation(delivery.getId());
-        
+
         // Gửi completion event
         sendStateChangeEvent(delivery, "COMPLETED");
-        
+
         log.info("Delivery {} completed successfully", delivery.getId());
+
+        AtomicBoolean startedNextSimulation = new AtomicBoolean(false);
+        // Tự động gán đơn READY_FOR_DELIVERY nếu chế độ AUTO và có đơn trong cùng cửa hàng
+        try {
+            if ("AUTO".equalsIgnoreCase(droneConfig.getAssignMode()) && order.getStore() != null && order.getStore().getId() != null) {
+                org.springframework.data.domain.Page<Order> readyPage =
+                        orderRepository.findByStoreIdAndStatus(order.getStore().getId(), Order.OrderStatus.READY_FOR_DELIVERY,
+                                org.springframework.data.domain.PageRequest.of(0, 1));
+                if (!readyPage.isEmpty()) {
+                    Order nextOrder = readyPage.getContent().get(0);
+                    fleetService.autoAssignDrone(nextOrder).ifPresent(da -> {
+                        Delivery nextDelivery = da.getDelivery();
+                        if (nextDelivery != null) {
+                            nextDelivery.setStatus(Delivery.DeliveryStatus.IN_PROGRESS);
+                            nextDelivery.setSegmentStartTime(LocalDateTime.now());
+                            deliveryRepository.save(nextDelivery);
+                            startSimulation(nextDelivery.getId());
+                            log.info("Auto-assigned and started simulation for next order {} with delivery {}", nextOrder.getId(), nextDelivery.getId());
+                            // Có đơn mới, bỏ qua mô phỏng quay về trạm
+                            startedNextSimulation.set(true);
+                        }
+                    });
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Auto-assign after completion failed: {}", ex.getMessage());
+        }
+
+        // Không có đơn mới thì chạy mô phỏng đường bay quay về trạm (chỉ hiển thị)
+        if (!startedNextSimulation.get()) {
+            startReturnToBaseVisualization(delivery);
+        }
     }
     
     private void sendGPSUpdate(Delivery delivery, double lat, double lng, int eta) {
+        // Cập nhật vị trí drone qua tracking service
+        droneTrackingService.updateDroneGps(
+            delivery.getDrone().getId(), 
+            lat, 
+            lng, 
+            delivery.getDrone().getBatteryPct()
+        );
+        
+        // Cập nhật tiến độ delivery
+        droneTrackingService.updateDeliveryProgress(
+            delivery.getId(),
+            delivery.getCurrentSegment(),
+            eta,
+            delivery.getStatus().toString()
+        );
+        
+        // Gửi ETA update nếu có thay đổi
+        if (delivery.getEtaSeconds() != eta) {
+            droneTrackingService.notifyDeliveryEtaUpdate(delivery.getId(), eta);
+        }
+        
+        // Vẫn giữ WebSocket cũ cho backward compatibility
         Map<String, Object> payload = Map.of(
             "eventType", "GPS_UPDATE",
             "deliveryId", delivery.getId(),
@@ -327,5 +420,60 @@ public class DroneSimulatorImpl implements DroneSimulator {
         );
         
         messagingTemplate.convertAndSend("/topic/delivery/" + delivery.getOrder().getId(), payload);
+    }
+    
+    @Override
+    public boolean isSimulationRunning(Long deliveryId) {
+        ScheduledFuture<?> future = activeSimulations.get(deliveryId);
+        return future != null && !future.isDone() && !future.isCancelled();
+    }
+
+    // --- Return-to-base visualization (post-completion, purely cosmetic) ---
+    private void startReturnToBaseVisualization(Delivery delivery) {
+        Long deliveryId = delivery.getId();
+        stopReturnVisualization(deliveryId);
+
+        final LocalDateTime startTime = LocalDateTime.now();
+        final int durationSec = droneConfig.getLegDuration("W2_W3");
+        final double[] startPos = getSegmentStartPosition(delivery, "W2_W3");
+        final double[] endPos = getSegmentEndPosition(delivery, "W2_W3");
+
+        ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
+            try {
+                long elapsed = ChronoUnit.SECONDS.between(startTime, LocalDateTime.now());
+                double u = Math.min(1.0, (double) elapsed / durationSec);
+                double lat = (1 - u) * startPos[0] + u * endPos[0];
+                double lng = (1 - u) * startPos[1] + u * endPos[1];
+
+                // Cập nhật vị trí drone nhưng KHÔNG thay đổi trạng thái đơn/assignment
+                Drone drone = delivery.getDrone();
+                drone.setCurrentLat(lat);
+                drone.setCurrentLng(lng);
+                drone.setLastSeenAt(LocalDateTime.now());
+                droneRepository.save(drone);
+
+                // Gửi GPS update để hiển thị đường bay, ETA=0, segment vẫn là segment cuối
+                sendGPSUpdate(delivery, lat, lng, 0);
+
+                if (u >= 1.0) {
+                    // Hoàn tất mô phỏng quay về trạm
+                    stopReturnVisualization(deliveryId);
+                    log.info("Return-to-base visualization finished for delivery {}", deliveryId);
+                }
+            } catch (Exception e) {
+                log.warn("Return-to-base visualization error for delivery {}: {}", deliveryId, e.getMessage());
+            }
+        }, 0, droneConfig.getGpsTickSec(), TimeUnit.SECONDS);
+
+        activeReturnVisualizations.put(deliveryId, future);
+        log.info("Started return-to-base visualization for delivery {}", deliveryId);
+    }
+
+    private void stopReturnVisualization(Long deliveryId) {
+        ScheduledFuture<?> future = activeReturnVisualizations.remove(deliveryId);
+        if (future != null) {
+            future.cancel(false);
+            log.info("Stopped return-to-base visualization for delivery {}", deliveryId);
+        }
     }
 }

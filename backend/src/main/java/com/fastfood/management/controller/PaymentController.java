@@ -41,10 +41,5 @@ public class PaymentController {
         return ResponseEntity.ok(response);
     }
 
-    // Thanh toán COD cơ bản: xác nhận thanh toán trực tiếp
-    @PostMapping("/cod/{orderId}")
-    public ResponseEntity<PaymentResponse> createCODPayment(@PathVariable Long orderId) {
-        PaymentResponse response = paymentService.createCODPayment(orderId);
-        return ResponseEntity.ok(response);
-    }
+
 }

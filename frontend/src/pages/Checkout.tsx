@@ -22,7 +22,7 @@ import {
   Checkbox,
   Alert
 } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { AddressDTO, createAddress, getDefaultAddress, setDefaultAddress as apiSetDefaultAddress } from '../services/address';
@@ -35,12 +35,15 @@ interface CartItem {
   price: number;
   quantity: number;
   image: string;
+  storeId?: string;
 }
 
 const steps = ['Delivery Address', 'Payment Method', 'Review Order'];
 
 const Checkout: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const selectedStoreId = (location.state as any)?.selectedStoreId as string | undefined;
   const [activeStep, setActiveStep] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('vnpay');
   const [useSavedAddress, setUseSavedAddress] = useState<'default' | 'new'>('new');
@@ -61,6 +64,8 @@ const Checkout: React.FC = () => {
   const auth = useSelector((state: RootState) => state.auth);
   const userId = auth.user ? Number(auth.user.id) : null;
   const { items, totalAmount } = useSelector((state: RootState) => state.cart);
+  const selectedItems: CartItem[] = (selectedStoreId ? items.filter((it: any) => it.storeId === selectedStoreId) : items) as any;
+  const selectedTotal: number = selectedItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
 
   const isValidPhone = (p: string | undefined) => !!p && /^\d{10,11}$/.test(p);
   const isValidLocalAddress = (a: any) =>
@@ -290,7 +295,13 @@ const Checkout: React.FC = () => {
         }
       }
 
-      const orderItems: CreateOrderItemRequest[] = items.map((it) => ({
+      if (selectedItems.length === 0) {
+        setErrorMsg('Không có món hàng thuộc cửa hàng đã chọn. Vui lòng quay lại giỏ hàng.');
+        setSubmitting(false);
+        return;
+      }
+
+      const orderItems: CreateOrderItemRequest[] = selectedItems.map((it) => ({
         menuItemId: Number(it.id),
         quantity: it.quantity,
       }));
@@ -318,7 +329,7 @@ const Checkout: React.FC = () => {
           : { line1: address.street, ward: '', district: address.district, city: address.city };
         const orderWithDetails = {
           ...order,
-          orderItems: items.map((item) => ({
+          orderItems: selectedItems.map((item) => ({
             id: Number(item.id),
             quantity: item.quantity,
             unitPrice: item.price,
@@ -492,10 +503,10 @@ const Checkout: React.FC = () => {
         return (
           <Box>
             <Typography variant="h6" gutterBottom>
-              Order Summary
+              Order Summary (theo cửa hàng đã chọn)
             </Typography>
             <List sx={{ mb: 2 }}>
-              {items.map((item: CartItem) => (
+              {selectedItems.map((item: CartItem) => (
                 <ListItem key={item.id} sx={{ py: 1, px: 0 }}>
                   <ListItemAvatar>
                     <Avatar src={item.image} alt={item.name} variant="rounded" />
@@ -513,7 +524,7 @@ const Checkout: React.FC = () => {
               <ListItem sx={{ py: 1, px: 0 }}>
                 <ListItemText primary="Total" />
                 <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                  {totalAmount.toLocaleString('vi-VN')}đ
+                  {selectedTotal.toLocaleString('vi-VN')}đ
                 </Typography>
               </ListItem>
             </List>

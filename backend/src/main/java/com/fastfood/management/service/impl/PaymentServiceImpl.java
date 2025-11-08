@@ -108,32 +108,7 @@ public class PaymentServiceImpl implements PaymentService {
         return toResponse(latest);
     }
 
-    @Override
-    public PaymentResponse createCODPayment(Long orderId) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new EntityNotFoundException("Order not found"));
 
-        // Create or update COD payment
-        List<Payment> payments = paymentRepository.findByOrderId(orderId);
-        Payment payment = payments.stream()
-                .filter(p -> "COD".equals(p.getProvider()))
-                .findFirst()
-                .orElseGet(() -> paymentRepository.save(Payment.builder()
-                        .order(order)
-                        .provider("COD")
-                        .amount(order.getTotalAmount())
-                        .transactionReference("COD-" + order.getId())
-                        .status(Payment.PaymentStatus.PENDING)
-                        .build()));
-
-        // For basic COD, mark as completed immediately
-        payment.setStatus(Payment.PaymentStatus.COMPLETED);
-        order.setPaymentStatus(Order.PaymentStatus.PAID);
-        paymentRepository.save(payment);
-        orderRepository.save(order);
-
-        return toResponse(payment);
-    }
 
     private String toVnpAmount(BigDecimal amount) {
         // VNPay expects amount x100 (no decimals)

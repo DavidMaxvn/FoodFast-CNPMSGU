@@ -53,12 +53,32 @@ public class WebSecurityConfig {
         .requestMatchers(HttpMethod.PUT, "/menu/**").permitAll()
         .requestMatchers(HttpMethod.DELETE, "/menu/**").permitAll()
         .requestMatchers(HttpMethod.GET, "/public/**").permitAll()
+        // Public products browsing endpoints
+        .requestMatchers(HttpMethod.GET, "/products").permitAll()
+        .requestMatchers(HttpMethod.GET, "/products/**").permitAll()
         // Public store browsing endpoints
         .requestMatchers(HttpMethod.GET, "/stores").permitAll()
         .requestMatchers(HttpMethod.GET, "/stores/**").permitAll()
+        // Public drone endpoints for checking drone data
+        .requestMatchers(HttpMethod.GET, "/drones").permitAll()
+        .requestMatchers(HttpMethod.GET, "/drones/**").permitAll()
+        // Drone management endpoints (temporarily allow for testing)
+        .requestMatchers(HttpMethod.GET, "/drone-management/**").permitAll()
+        .requestMatchers(HttpMethod.POST, "/drone-management/**").permitAll()
+        .requestMatchers(HttpMethod.PUT, "/drone-management/**").permitAll()
+        // Drone tracking endpoints
+        .requestMatchers(HttpMethod.GET, "/drone-tracking/**").permitAll()
+        .requestMatchers(HttpMethod.POST, "/drone-tracking/**").permitAll()
+        // Deliveries endpoints (temporarily allow for testing)
+        .requestMatchers(HttpMethod.GET, "/deliveries/**").permitAll()
+        .requestMatchers(HttpMethod.POST, "/deliveries/**").permitAll()
+        .requestMatchers(HttpMethod.PUT, "/deliveries/**").permitAll()
         // Cho phép VNPay tạo payment và trả về (callback) không cần JWT
         .requestMatchers(HttpMethod.POST, "/payments/vnpay/**").permitAll()
         .requestMatchers(HttpMethod.GET, "/payments/vnpay/return").permitAll()
+        // Cho phép WebSocket endpoints
+        .requestMatchers("/ws/**").permitAll()
+        .requestMatchers("/api/ws/**").permitAll()
         .anyRequest().authenticated();
 
     // Thêm JWT filter trước UsernamePasswordAuthenticationFilter
@@ -77,7 +97,11 @@ public class WebSecurityConfig {
     CorsConfiguration configuration = new CorsConfiguration();
 
     // Allow specific origins instead of wildcard to support credentials
-    configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:8080"));
+    configuration.setAllowedOrigins(Arrays.asList(
+      "http://localhost:3000",
+      "http://localhost:8080",
+      "https://*.replit.dev"
+    ));
     configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(Arrays.asList("*"));
     configuration.setAllowCredentials(true); // Enable credentials support

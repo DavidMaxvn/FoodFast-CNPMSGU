@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -49,6 +50,9 @@ public class Order {
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", nullable = false)
     private PaymentStatus paymentStatus;
+
+    @Column(name = "order_code", unique = true)
+    private String orderCode;
     
     @ManyToOne
     @JoinColumn(name = "address_id")
@@ -62,6 +66,7 @@ public class Order {
     private List<OrderItem> orderItems = new ArrayList<>();
     
     @OneToOne(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonManagedReference
     private Delivery delivery;
     
     @CreatedDate
@@ -78,7 +83,7 @@ public class Order {
     }
     
     public enum PaymentMethod {
-        COD, VNPAY, WALLET
+        VNPAY, WALLET
     }
     
     public enum PaymentStatus {

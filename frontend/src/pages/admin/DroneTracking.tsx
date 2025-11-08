@@ -32,6 +32,8 @@ import {
 } from '@mui/icons-material';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { droneService, ActiveDelivery, DroneGpsUpdate, DroneStateChange, DeliveryEtaUpdate } from '../../services/droneService';
+import TrackingMap from '../../components/TrackingMap';
+import api from '../../services/api';
 
 // Remove duplicate interfaces since they're imported from service
 const DroneTracking: React.FC = () => {
@@ -40,9 +42,11 @@ const DroneTracking: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // WebSocket connection
+  // WebSocket connection (derive from API base URL)
+  const wsUrl = ((api.defaults.baseURL || 'http://localhost:8080/api').replace(/\/+$/, '')
+    .replace(/\/api$/, '')) + '/api/ws';
   const { isConnected, subscribe, unsubscribe } = useWebSocket({
-    url: 'http://localhost:8080/ws',
+    url: wsUrl,
     onConnect: () => {
       console.log('Connected to drone tracking WebSocket');
       setError(null);
@@ -71,6 +75,11 @@ const DroneTracking: React.FC = () => {
     }
   };
 
+  // Selected delivery and map state
+  const [selectedDeliveryId, setSelectedDeliveryId] = useState<string | null>(null);
+  const [droneLocation, setDroneLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [customerLocation, setCustomerLocation] = useState<{ lat: number; lng: number } | null>(null);
+
   // WebSocket subscriptions
   useEffect(() => {
     if (!isConnected) return;
@@ -88,6 +97,11 @@ const DroneTracking: React.FC = () => {
           ? { ...delivery, currentSegment: update.currentSegment, etaSeconds: update.etaSeconds }
           : delivery
       ));
+
+      // Update map drone position if this GPS corresponds to selected delivery
+      if (selectedDeliveryId && update.deliveryId === selectedDeliveryId) {
+        setDroneLocation({ lat: update.latitude, lng: update.longitude });
+      }
     });
 
     // Subscribe to state changes
@@ -194,6 +208,24 @@ const DroneTracking: React.FC = () => {
     }
   };
 
+  // Fetch customer destination for selected delivery (orderId)
+  const loadDestinationForDelivery = async (delivery: ActiveDelivery) => {
+    try {
+      const res = await api.get(`/deliveries/${delivery.orderId}/track`);
+      const t = res.data || {};
+      const destLat = Number(t.destinationLat ?? t?.tracking?.destinationLat);
+      const destLng = Number(t.destinationLng ?? t?.tracking?.destinationLng);
+      const isValidCoord = (lat?: number, lng?: number) => 
+        Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+
+      if (isValidCoord(destLat, destLng)) {
+        setCustomerLocation({ lat: destLat!, lng: destLng! });
+      }
+    } catch (e) {
+      console.warn('Failed to load destination for delivery', delivery.id, e);
+    }
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -297,12 +329,39 @@ const DroneTracking: React.FC = () => {
                          <Typography variant="caption" color="text.secondary">
                            Progress: {delivery.progressPercent || 0}%
                          </Typography>
+
+                         <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                           <Tooltip title="Xem lộ trình trên bản đồ">
+                             <IconButton
+                               size="small"
+                               color={selectedDeliveryId === delivery.id ? 'primary' : 'default'}
+                               onClick={() => {
+                                 setSelectedDeliveryId(delivery.id);
+                                 // Set current drone location if known from events
+                                 const latestGpsForDelivery = droneEvents.find(e => 'latitude' in e && (e as any).deliveryId === delivery.id) as DroneGpsUpdate | undefined;
+                                 if (latestGpsForDelivery) {
+                                   setDroneLocation({ lat: latestGpsForDelivery.latitude, lng: latestGpsForDelivery.longitude });
+                                 }
+                                 loadDestinationForDelivery(delivery);
+                               }}
+                             >
+                               <LocationOn />
+                             </IconButton>
+                           </Tooltip>
+                           {delivery.status === 'ASSIGNED' && (
+                             <Tooltip title="Bắt đầu giao hàng">
+                               <IconButton size="small" color="success" onClick={() => handleStartDelivery(delivery.id)}>
+                                 <PlayArrow />
+                               </IconButton>
+                             </Tooltip>
+                           )}
+                         </Box>
                         
                         {delivery.status === 'ASSIGNED' && (
                            <Box sx={{ mt: 1 }}>
                              <Button
                                size="small"
-                               variant="contained"
+                               variant="outlined"
                                startIcon={<PlayArrow />}
                                onClick={() => handleStartDelivery(delivery.id)}
                              >
@@ -353,29 +412,25 @@ const DroneTracking: React.FC = () => {
           </Paper>
         </Grid>
 
-        {/* Map Placeholder */}
+        {/* Map: selected delivery route and live GPS */}
         <Grid item xs={12}>
-          <Paper sx={{ p: 2, height: '400px' }}>
+          <Paper sx={{ p: 2 }}>
             <Typography variant="h6" gutterBottom>
-              Drone Locations Map
+              Bản Đồ Drone Đang Giao
             </Typography>
-            <Box 
-              sx={{ 
-                height: '350px', 
-                backgroundColor: '#f5f5f5', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                border: '2px dashed #ccc',
-                borderRadius: 1
-              }}
-            >
-              <Typography color="text.secondary">
-                Map integration will be implemented here
-                <br />
-                (Google Maps, Leaflet, etc.)
-              </Typography>
+            <Box sx={{ height: 400, borderRadius: 2, overflow: 'hidden', boxShadow: 1 }}>
+              <TrackingMap
+                height={400}
+                orderId={selectedDeliveryId || undefined}
+                droneLocation={droneLocation || undefined}
+                customerLocation={customerLocation || undefined}
+              />
             </Box>
+            {!selectedDeliveryId && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                Chọn một delivery trong danh sách để xem lộ trình trên bản đồ.
+              </Alert>
+            )}
           </Paper>
         </Grid>
       </Grid>

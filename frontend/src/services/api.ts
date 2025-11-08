@@ -1,8 +1,13 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 
 // Create axios instance with base configuration
+const isDev = process.env.NODE_ENV === 'development';
+const baseURL = isDev
+  ? '/api' // Use CRA dev proxy to avoid CORS in development
+  : (process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080/api');
+
 const api: AxiosInstance = axios.create({
-  baseURL: process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080/api',
+  baseURL,
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',

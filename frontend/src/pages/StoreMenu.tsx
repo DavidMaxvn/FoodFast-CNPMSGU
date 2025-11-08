@@ -561,7 +561,9 @@ const StoreMenu: React.FC = () => {
         name: item.name,
         price: Number(item.price),
         quantity: 1,
-        image: item.image || ''
+        image: item.image || '',
+        storeId: store?.id ? String(store.id) : (id ? String(id) : undefined),
+        storeName: store?.name || 'Unknown'
       })
     );
     
