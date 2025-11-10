@@ -39,15 +39,7 @@ jobs:
       - name: Run tests
         env:
           CI: true
-        run: |
-          if find src -type f \( \
-            -name '*\.test.js' -o -name '*\.test.jsx' -o -name '*\.test.ts' -o -name '*\.test.tsx' -o \
-            -name '*\.spec.js' -o -name '*\.spec.jsx' -o -name '*\.spec.ts' -o -name '*\.spec.tsx' -o \
-            -path '*/__tests__/*' \) -print -quit | grep -q .; then
-            npm test -- --watch=false --passWithNoTests
-          else
-            echo "No frontend test files detected; skipping Jest run."
-          fi
+        run: npm test -- --watch=false
 
       - name: Build production bundle
         run: npm run build
