@@ -39,7 +39,7 @@ jobs:
       - name: Run tests
         env:
           CI: true
-        run: npm test -- --watch=false --passWithNoTests
+        run: npm test -- --watch=false
 
       - name: Build production bundle
         run: npm run build
