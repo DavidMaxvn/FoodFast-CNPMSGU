@@ -89,6 +89,13 @@ function mapBackendToUiStatus(s?: string): OrderVM['status'] {
   }
 }
 
+// Normalize raw status to allowed union without using Array.includes (ES2016)
+function normalizeOrderStatus(s?: string): OrderDTO['status'] {
+  const val = String(s || '').toUpperCase();
+  const allowed = ['CREATED','CONFIRMED','PREPARING','DELIVERING','COMPLETED','CANCELLED'];
+  return (allowed.indexOf(val) !== -1) ? (val as OrderDTO['status']) : 'CREATED';
+}
+
 function toVM(order: OrderDTO): OrderVM {
   const items: OrderItemVM[] = Array.isArray(order.orderItems)
     ? order.orderItems.map((it) => ({
@@ -128,9 +135,7 @@ function coerceOrderLoose(o: any): OrderDTO | null {
   const idRaw = (o.id ?? o.orderId ?? o.code);
   const id = Number(idRaw);
   if (Number.isNaN(id)) return null;
-  const statusRaw = String(o.status ?? '').toUpperCase();
-  const allowed = ['CREATED','CONFIRMED','PREPARING','DELIVERING','COMPLETED','CANCELLED'];
-  const status = allowed.includes(statusRaw) ? statusRaw as OrderDTO['status'] : 'CREATED';
+  const status = normalizeOrderStatus(o.status);
   const totalAmount = Number(o.totalAmount ?? o.total ?? o.amount ?? 0);
   const createdAt = String(o.createdAt ?? o.createdDate ?? o.created_time ?? o.time ?? '');
   const itemsRaw = Array.isArray(o.orderItems) ? o.orderItems : (Array.isArray(o.items) ? o.items : undefined);
@@ -341,9 +346,7 @@ export async function getMyOrders(userId: string | number): Promise<OrderDTO[]> 
     const idRaw = (o.id ?? o.orderId ?? o.code);
     const id = Number(idRaw);
     if (Number.isNaN(id)) return null;
-    const statusRaw = String(o.status ?? '').toUpperCase();
-    const allowed = ['CREATED','CONFIRMED','PREPARING','DELIVERING','COMPLETED','CANCELLED'];
-    const status = allowed.includes(statusRaw) ? statusRaw as OrderDTO['status'] : 'CREATED';
+    const status = normalizeOrderStatus(o.status);
     const totalAmount = Number(o.totalAmount ?? o.total ?? o.amount ?? 0);
     const createdAt = String(o.createdAt ?? o.createdDate ?? o.created_time ?? o.time ?? '');
     const itemsRaw = Array.isArray(o.orderItems) ? o.orderItems : (Array.isArray(o.items) ? o.items : undefined);
