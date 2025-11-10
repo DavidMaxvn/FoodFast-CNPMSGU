@@ -333,9 +333,9 @@ const Stores: React.FC = () => {
           transform: 'translate(30%, -30%)'
         }
       }}>
-        <Box sx={{ position: 'relative', zIndex: 1 }}>
+        <Container maxWidth="xl" sx={{ position: 'relative', zIndex: 1 }}>
           <Typography variant="h2" sx={{ fontWeight: 900, mb: 1, fontSize: { xs: '2rem', md: '3rem' } }}>
-            🍔 Nhanh · Ngon · Rẻ
+             Nhanh · Ngon · Rẻ
           </Typography>
           <Typography variant="h6" sx={{ mt: 2, opacity: 0.95, maxWidth: 600 }}>
             Chọn cửa hàng gần bạn và đặt món yêu thích ngay. Giao hàng nhanh chóng trong 30 phút!
@@ -373,14 +373,14 @@ const Stores: React.FC = () => {
               Xem đơn gần đây
             </Button>
           </Box>
-        </Box>
+        </Container>
       </Box>
 
       <Container maxWidth="xl">
         {/* Statistics removed as requested */}
 
         {/* Search and Filter */}
-        <Paper sx={{ p: 3, mb: 3 }}>
+        <Paper sx={{ p: 3, mb: 3, borderRadius: 3, boxShadow: '0 8px 24px rgba(0,0,0,0.06)', border: '1px solid #eee' }}>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} md={6}>
               <TextField
@@ -397,7 +397,8 @@ const Stores: React.FC = () => {
                 }}
                 sx={{ 
                   '& .MuiOutlinedInput-root': {
-                    borderRadius: 2
+                    borderRadius: 2,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.06)'
                   }
                 }}
               />
@@ -409,6 +410,21 @@ const Stores: React.FC = () => {
                 onChange={(_, value) => value && setFilterStatus(value)}
                 fullWidth
                 size="small"
+                sx={{
+                  '& .MuiToggleButton-root': {
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    fontWeight: 600
+                  },
+                  '& .MuiToggleButton-root.Mui-selected': {
+                    bgcolor: 'rgba(255,61,0,0.1)',
+                    color: '#FF3D00',
+                    borderColor: '#FF3D00'
+                  },
+                  '& .MuiToggleButton-root:hover': {
+                    bgcolor: 'rgba(255,61,0,0.06)'
+                  }
+                }}
               >
                 <ToggleButton value="all">
                   Tất cả ({stores.length})
@@ -428,6 +444,14 @@ const Stores: React.FC = () => {
                 onChange={(_, value) => value && setViewMode(value)}
                 fullWidth
                 size="small"
+                sx={{
+                  '& .MuiToggleButton-root': { borderRadius: 2 },
+                  '& .MuiToggleButton-root.Mui-selected': {
+                    bgcolor: 'rgba(255,61,0,0.1)',
+                    color: '#FF3D00',
+                    borderColor: '#FF3D00'
+                  }
+                }}
               >
                 <ToggleButton value="grid">
                   <GridView />
@@ -460,6 +484,9 @@ const Stores: React.FC = () => {
                     position: 'relative',
                     transition: 'all 0.3s',
                     opacity: store.isOpen ? 1 : 0.7,
+                    borderRadius: 3,
+                    boxShadow: 1,
+                    border: '1px solid #eee',
                     '&:hover': {
                       transform: 'translateY(-8px)',
                       boxShadow: 6
@@ -478,6 +505,17 @@ const Stores: React.FC = () => {
                           filter: !store.isOpen ? 'grayscale(100%)' : 'none'
                         }}
                       />
+                    )}
+                    {/* Gradient overlay for image */}
+                    {store.image && (
+                      <Box sx={{
+                        position: 'absolute',
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: '40%',
+                        background: 'linear-gradient(to top, rgba(0,0,0,0.35), transparent)'
+                      }}/>
                     )}
                     
                     {/* Featured badge */}
@@ -564,7 +602,16 @@ const Stores: React.FC = () => {
                         {store.name}
                       </Typography>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Rating value={store.rating || 0} precision={0.1} size="small" readOnly />
+                        <Rating 
+                          value={store.rating || 0} 
+                          precision={0.1} 
+                          size="small" 
+                          readOnly 
+                          sx={{
+                            '& .MuiRating-iconFilled': { color: '#FFC107' },
+                            '& .MuiRating-iconEmpty': { color: 'rgba(0,0,0,0.15)' }
+                          }}
+                        />
                         <Typography variant="body2" color="text.secondary">
                           {store.rating} ({store.reviewCount})
                         </Typography>
@@ -612,7 +659,7 @@ const Stores: React.FC = () => {
                             label={tag}
                             size="small"
                             variant="outlined"
-                            sx={{ fontSize: '0.7rem', height: 22 }}
+                            sx={{ fontSize: '0.7rem', height: 22, borderRadius: 1.5 }}
                           />
                         ))}
                       </Box>
@@ -627,7 +674,7 @@ const Stores: React.FC = () => {
                         fullWidth
                         disabled={!store.isOpen}
                         onClick={() => navigate(`/stores/${store.id}/menu`)}
-                        sx={{ fontWeight: 600 }}
+                        sx={{ fontWeight: 600, bgcolor: '#FF3D00', '&:hover': { bgcolor: '#e63600' } }}
                       >
                         Xem thực đơn
                       </Button>
@@ -647,6 +694,9 @@ const Stores: React.FC = () => {
                   display: 'flex',
                   opacity: store.isOpen ? 1 : 0.7,
                   transition: 'all 0.3s',
+                  borderRadius: 3,
+                  boxShadow: 1,
+                  border: '1px solid #eee',
                   '&:hover': {
                     boxShadow: 4
                   }
@@ -666,6 +716,16 @@ const Stores: React.FC = () => {
                       image={store.image}
                       alt={store.name}
                     />
+                  )}
+                  {store.image && (
+                    <Box sx={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: '40%',
+                      background: 'linear-gradient(to top, rgba(0,0,0,0.35), transparent)'
+                    }}/>
                   )}
                   
                   {store.isFeatured && (
@@ -784,6 +844,7 @@ const Stores: React.FC = () => {
                           label={tag}
                           size="small"
                           variant="outlined"
+                          sx={{ borderRadius: 1.5 }}
                         />
                       ))}
                     </Box>
@@ -797,7 +858,7 @@ const Stores: React.FC = () => {
                       variant="contained" 
                       disabled={!store.isOpen}
                       onClick={() => navigate(`/stores/${store.id}/menu`)}
-                      sx={{ fontWeight: 600, px: 4 }}
+                      sx={{ fontWeight: 600, px: 4, bgcolor: '#FF3D00', '&:hover': { bgcolor: '#e63600' } }}
                     >
                       Xem thực đơn
                     </Button>

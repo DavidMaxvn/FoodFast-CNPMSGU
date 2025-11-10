@@ -2,9 +2,10 @@ import axios, { AxiosInstance, AxiosResponse } from 'axios';
 
 // Create axios instance with base configuration
 const isDev = process.env.NODE_ENV === 'development';
-const baseURL = isDev
-  ? '/api' // Use CRA dev proxy to avoid CORS in development
-  : (process.env.REACT_APP_API_BASE_URL || 'http://localhost:8080/api');
+// Prefer explicit env base URL if provided (both dev and prod), fallback to CRA proxy in dev
+const baseURL = (process.env.REACT_APP_API_BASE_URL && process.env.REACT_APP_API_BASE_URL.trim())
+  ? process.env.REACT_APP_API_BASE_URL.trim()
+  : (isDev ? '/api' : 'http://localhost:8080/api');
 
 const api: AxiosInstance = axios.create({
   baseURL,

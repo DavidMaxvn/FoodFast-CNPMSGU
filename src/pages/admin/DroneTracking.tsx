@@ -33,6 +33,7 @@ import {
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { droneService, ActiveDelivery, DroneGpsUpdate, DroneStateChange, DeliveryEtaUpdate } from '../../services/droneService';
 import TrackingMap from '../../components/TrackingMap';
+import { normalizePair, clampToHcmRadius, isValidCoord } from '../../utils/geo';
 import api from '../../services/api';
 
 // Remove duplicate interfaces since they're imported from service
@@ -100,7 +101,11 @@ const DroneTracking: React.FC = () => {
 
       // Update map drone position if this GPS corresponds to selected delivery
       if (selectedDeliveryId && update.deliveryId === selectedDeliveryId) {
-        setDroneLocation({ lat: update.latitude, lng: update.longitude });
+        const p = normalizePair(update.latitude, update.longitude);
+        const c = clampToHcmRadius(p);
+        if (c && isValidCoord(c.lat, c.lng)) {
+          setDroneLocation({ lat: c.lat, lng: c.lng });
+        }
       }
     });
 
@@ -213,13 +218,13 @@ const DroneTracking: React.FC = () => {
     try {
       const res = await api.get(`/deliveries/${delivery.orderId}/track`);
       const t = res.data || {};
-      const destLat = Number(t.destinationLat ?? t?.tracking?.destinationLat);
-      const destLng = Number(t.destinationLng ?? t?.tracking?.destinationLng);
-      const isValidCoord = (lat?: number, lng?: number) => 
-        Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
-
-      if (isValidCoord(destLat, destLng)) {
-        setCustomerLocation({ lat: destLat!, lng: destLng! });
+      const destPair = normalizePair(
+        Number(t.destinationLat ?? t?.tracking?.destinationLat ?? t.destinationLatitude),
+        Number(t.destinationLng ?? t?.tracking?.destinationLng ?? t.destinationLongitude)
+      );
+      const c = clampToHcmRadius(destPair);
+      if (c && isValidCoord(c.lat, c.lng)) {
+        setCustomerLocation({ lat: c.lat, lng: c.lng });
       }
     } catch (e) {
       console.warn('Failed to load destination for delivery', delivery.id, e);
@@ -424,6 +429,7 @@ const DroneTracking: React.FC = () => {
                 orderId={selectedDeliveryId || undefined}
                 droneLocation={droneLocation || undefined}
                 customerLocation={customerLocation || undefined}
+                simulate={false}
               />
             </Box>
             {!selectedDeliveryId && (

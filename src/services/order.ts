@@ -480,6 +480,17 @@ export interface Page<T> {
   size: number;
 }
 
+// Stats DTO for merchant dashboard
+export interface OrderStatsResponse {
+  storeId?: number;
+  start?: string;
+  end?: string;
+  totalRevenue: number;
+  processingCount: number;
+  deliveredCount: number;
+  cancelledCount: number;
+}
+
 // New: list orders by status with pagination (for all roles)
 export async function getOrdersByStatus(status: string, page: number = 0, size: number = 20, code?: string, storeId?: number): Promise<Page<OrderResponse>> {
   const params: any = { status, page, size };
@@ -489,6 +500,25 @@ export async function getOrdersByStatus(status: string, page: number = 0, size: 
     params,
   });
   return res.data;
+}
+
+// Get stats for merchant dashboard
+export async function getOrderStats(storeId?: number, start?: string, end?: string): Promise<OrderStatsResponse> {
+  const params: any = {};
+  if (storeId != null) params.storeId = storeId;
+  if (start) params.start = start;
+  if (end) params.end = end;
+  const res = await api.get('/orders/stats', { params });
+  const data = res.data || {};
+  return {
+    storeId: Number(data.storeId ?? storeId ?? 0) || undefined,
+    start: data.start || start,
+    end: data.end || end,
+    totalRevenue: Number(data.totalRevenue ?? 0),
+    processingCount: Number(data.processingCount ?? 0),
+    deliveredCount: Number(data.deliveredCount ?? 0),
+    cancelledCount: Number(data.cancelledCount ?? 0),
+  };
 }
 
 // Old function was pointing to /orders/store which backend doesn't expose; keep for compatibility if needed

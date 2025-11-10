@@ -145,21 +145,20 @@ function App() {
           }
         >
           {/* Routes accessible by both Manager and Staff */}
+          <Route path="dashboard" element={<MerchantDashboard />} />
+          <Route path="dashboard/:storeId" element={<MerchantDashboard />} />
           <Route path="orders" element={<MerchantOrders />} />
-          <Route path="inventory" element={<MerchantInventory />} />
-          <Route path="feedback" element={<MerchantFeedback />} />
           <Route path="orders/:id" element={<MerchantOrderDetail />} />
 
-          {/* Manager-only routes */}
-          <Route path="dashboard" element={<MerchantDashboard />} />
+          {/* Manager-only routes (đã ẩn Dashboard/Reports) */}
           <Route path="menu" element={<MerchantMenu />} />
           <Route path="menu/new" element={<MerchantMenuForm />} />
           <Route path="categories" element={<MerchantCategories />} />
           <Route path="staff" element={<MerchantStaff />} />
-          <Route path="reports" element={<MerchantReports />} />
           <Route path="profile" element={<StoreProfile />} />
           <Route path="settings" element={<StoreSettings />} />
 
+          {/* Index: dẫn tới Dashboard */}
           <Route index element={<Navigate to="/merchant/dashboard" replace />} />
         </Route>
 

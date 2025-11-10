@@ -11,23 +11,18 @@ const drawerWidth = 240;
 // Vietnamese comments:
 // RBAC nav: Manager xem toàn bộ. Staff chỉ xem Orders, Inventory (read-only), Feedback.
 const managerItems = [
-  { label: 'Home', path: '/merchant' },
+  // Đã ẩn: Home, Inventory, Reports, Feedback
   { label: 'Dashboard', path: '/merchant/dashboard' },
   { label: 'Orders', path: '/merchant/orders' },
   { label: 'Menu', path: '/merchant/menu' },
   { label: 'Categories', path: '/merchant/categories' },
-  { label: 'Inventory', path: '/merchant/inventory' },
   { label: 'Staff', path: '/merchant/staff' },
-  { label: 'Reports', path: '/merchant/reports' },
-  { label: 'Feedback', path: '/merchant/feedback' },
   { label: 'Store Profile', path: '/merchant/profile' },
   { label: 'Store Settings', path: '/merchant/settings' },
 ];
 const staffItems = [
-  { label: 'Home', path: '/merchant' },
+  // Đã ẩn: Home, Inventory, Feedback
   { label: 'Orders', path: '/merchant/orders' },
-  { label: 'Inventory', path: '/merchant/inventory' },
-  { label: 'Feedback', path: '/merchant/feedback' },
 ];
 
 /**
@@ -97,12 +92,16 @@ const MerchantLayout: React.FC = () => {
           <Divider />
           <List>
             {renderItems().map((item) => {
-              const selected = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+              const isDashboard = item.label === 'Dashboard';
+              const target = isDashboard && currentStore?.id
+                ? `/merchant/dashboard/${currentStore.id}`
+                : item.path;
+              const selected = location.pathname === target || location.pathname.startsWith(target + '/');
               return (
                 <ListItemButton
                   key={item.path}
                   selected={selected}
-                  onClick={() => navigate(item.path)}
+                  onClick={() => navigate(target)}
                 >
                   <ListItemText primary={item.label} />
                 </ListItemButton>

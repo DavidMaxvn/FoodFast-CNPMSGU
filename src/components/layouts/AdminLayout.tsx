@@ -62,13 +62,14 @@ const AdminLayout: React.FC = () => {
     navigate('/login');
   };
 
+  // Ẩn tạm thời các mục: Menu Management, Inventory, Staff, Kitchen Board
   const menuItems = [
     { text: 'Dashboard', icon: <Dashboard />, path: '/admin' },
-    { text: 'Menu Management', icon: <Restaurant />, path: '/admin/menu' },
-    { text: 'Inventory', icon: <Inventory />, path: '/admin/inventory' },
+    // { text: 'Menu Management', icon: <Restaurant />, path: '/admin/menu' },
+    // { text: 'Inventory', icon: <Inventory />, path: '/admin/inventory' },
     { text: 'Orders', icon: <ShoppingCart />, path: '/admin/orders' },
-    { text: 'Staff', icon: <People />, path: '/admin/staff' },
-    { text: 'Kitchen Board', icon: <Kitchen />, path: '/admin/kitchen' },
+    // { text: 'Staff', icon: <People />, path: '/admin/staff' },
+    // { text: 'Kitchen Board', icon: <Kitchen />, path: '/admin/kitchen' },
     // Ẩn các tính năng drone chưa hoàn thiện cho demo
     // { text: 'Drone Console', icon: <FlightTakeoff />, path: '/admin/drones' },
     // { text: 'Drone Tracking', icon: <GpsFixed />, path: '/admin/drone-tracking' },
