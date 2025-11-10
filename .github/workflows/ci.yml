@@ -42,6 +42,8 @@ jobs:
         run: npm test -- --watch=false --passWithNoTests
 
       - name: Build production bundle
+        env:
+          CI: false
         run: npm run build
 
   backend:
