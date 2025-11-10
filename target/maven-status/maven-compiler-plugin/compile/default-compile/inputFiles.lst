@@ -1,4 +1,5 @@
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\config\SchedulingConfig.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\OrderStatsResponse.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\StoreController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\impl\FleetServiceImpl.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\User.java
@@ -68,6 +69,7 @@ C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\con
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\FastFoodManagementApplication.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\entity\Category.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\config\ImagesResourceConfig.java
+C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\StaffController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\dto\response\OrderResponse.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\controller\DroneTrackingController.java
 C:\Users\dell\Desktop\fastfood\backend\src\main\java\com\fastfood\management\service\ImageStorage.java

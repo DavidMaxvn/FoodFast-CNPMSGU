@@ -374,6 +374,40 @@ public class OrderServiceImpl implements OrderService {
         return getOrdersByStatus(status, pageable);
     }
 
+    @Override
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public com.fastfood.management.dto.response.OrderStatsResponse getOrderStats(Long storeId, java.time.LocalDateTime start, java.time.LocalDateTime end) {
+        java.util.List<Order.OrderStatus> processingStatuses = java.util.Arrays.asList(
+                Order.OrderStatus.CREATED,
+                Order.OrderStatus.CONFIRMED,
+                Order.OrderStatus.PREPARING,
+                Order.OrderStatus.READY_FOR_DELIVERY,
+                Order.OrderStatus.ASSIGNED,
+                Order.OrderStatus.OUT_FOR_DELIVERY
+        );
+        java.util.List<Order.OrderStatus> deliveredStatuses = java.util.Arrays.asList(Order.OrderStatus.DELIVERED);
+        java.util.List<Order.OrderStatus> cancelledStatuses = java.util.Arrays.asList(
+                Order.OrderStatus.CANCELLED,
+                Order.OrderStatus.REJECTED,
+                Order.OrderStatus.FAILED
+        );
+
+        java.math.BigDecimal totalRevenue = orderRepository.sumTotalAmountByStatusAndStore(storeId, deliveredStatuses, start, end);
+        long processingCount = orderRepository.countByStatusAndStore(storeId, processingStatuses, start, end);
+        long deliveredCount = orderRepository.countByStatusAndStore(storeId, deliveredStatuses, start, end);
+        long cancelledCount = orderRepository.countByStatusAndStore(storeId, cancelledStatuses, start, end);
+
+        return com.fastfood.management.dto.response.OrderStatsResponse.builder()
+                .storeId(storeId)
+                .start(start)
+                .end(end)
+                .totalRevenue(totalRevenue != null ? totalRevenue : java.math.BigDecimal.ZERO)
+                .processingCount(processingCount)
+                .deliveredCount(deliveredCount)
+                .cancelledCount(cancelledCount)
+                .build();
+    }
+
     // Helper methods
     
     private void validateStatusTransition(Order.OrderStatus currentStatus, Order.OrderStatus newStatus) {

@@ -22,6 +22,9 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.Map;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 
 @RestController
 @RequestMapping("/orders")
@@ -89,9 +92,24 @@ public class OrderController {
             @PathVariable Long id,
             @RequestParam("status") String status,
             @AuthenticationPrincipal org.springframework.security.core.userdetails.User principal) {
-        User currentUser = resolveCurrentUser(principal);
         try {
-            Order.OrderStatus targetStatus = Order.OrderStatus.valueOf(status.toUpperCase());
+            // Đưa việc resolve user vào trong try-catch để tránh rơi vào 500
+            if (principal == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of(
+                                "error", "UNAUTHORIZED",
+                                "message", "Bạn cần đăng nhập để thực hiện thao tác này"
+                        ));
+            }
+            User currentUser = resolveCurrentUser(principal);
+            String normalized = status == null ? "" : status.trim().toUpperCase();
+            // Chấp nhận alias từ frontend: DELIVERING => OUT_FOR_DELIVERY, READY => READY_FOR_DELIVERY
+            if ("DELIVERING".equals(normalized)) {
+                normalized = "OUT_FOR_DELIVERY";
+            } else if ("READY".equals(normalized)) {
+                normalized = "READY_FOR_DELIVERY";
+            }
+            Order.OrderStatus targetStatus = Order.OrderStatus.valueOf(normalized);
             Order updatedOrder = orderService.updateOrderStatus(id, targetStatus, currentUser);
             return ResponseEntity.ok(updatedOrder);
         } catch (IllegalArgumentException e) {
@@ -119,6 +137,13 @@ public class OrderController {
                             "error", "NOT_FOUND",
                             "message", e.getMessage()
                     ));
+        } catch (Exception e) {
+            // Tránh rơi vào 500 do GlobalExceptionHandler với lỗi chung
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of(
+                            "error", "INVALID_REQUEST",
+                            "message", e.getMessage()
+                    ));
         }
     }
 
@@ -134,6 +159,42 @@ public class OrderController {
         Order.OrderStatus queryStatus = Order.OrderStatus.valueOf(status.toUpperCase());
         Page<OrderResponse> orders = orderService.getOrdersByStatus(queryStatus, PageRequest.of(page, size), code, storeId);
         return ResponseEntity.ok(orders);
+    }
+
+    // Stats endpoint for merchant dashboard
+    @GetMapping("/stats")
+    @PreAuthorize("hasAnyRole('MERCHANT', 'STAFF', 'ADMIN')")
+    public ResponseEntity<?> getOrderStats(
+            @RequestParam(value = "storeId", required = false) Long storeId,
+            @RequestParam(value = "start", required = false) String start,
+            @RequestParam(value = "end", required = false) String end) {
+        try {
+            LocalDateTime startDt = null;
+            LocalDateTime endDt = null;
+            if (start != null && !start.isBlank()) {
+                // Accept either ISO LocalDate or ISO LocalDateTime
+                try {
+                    startDt = LocalDate.parse(start).atStartOfDay();
+                } catch (DateTimeParseException ex) {
+                    startDt = LocalDateTime.parse(start);
+                }
+            }
+            if (end != null && !end.isBlank()) {
+                try {
+                    endDt = LocalDate.parse(end).atTime(23, 59, 59);
+                } catch (DateTimeParseException ex) {
+                    endDt = LocalDateTime.parse(end);
+                }
+            }
+            var stats = orderService.getOrderStats(storeId, startDt, endDt);
+            return ResponseEntity.ok(stats);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of(
+                            "error", "INVALID_PARAMS",
+                            "message", e.getMessage()
+                    ));
+        }
     }
     private User resolveCurrentUser(org.springframework.security.core.userdetails.User principal) {
         if (principal == null) {

@@ -31,9 +31,25 @@ public class DroneTrackingServiceImpl implements DroneTrackingService {
     private final Map<Long, DroneGpsData> droneGpsCache = new ConcurrentHashMap<>();
     private final Map<Long, DeliveryProgress> deliveryProgressCache = new ConcurrentHashMap<>();
 
+    // Giới hạn tọa độ trong khu vực TP.HCM (bounding box gần đúng)
+    private static final double HCMC_MIN_LAT = 10.35;
+    private static final double HCMC_MAX_LAT = 11.00;
+    private static final double HCMC_MIN_LNG = 106.20;
+    private static final double HCMC_MAX_LNG = 106.95;
+
     @Override
     public void updateDroneGps(Long droneId, double lat, double lng, double batteryLevel) {
         try {
+            // Validate lat/lng hợp lệ và nằm trong khu vực TP.HCM
+            if (!isValidLatLng(lat, lng)) {
+                throw new IllegalArgumentException("Invalid latitude/longitude values");
+            }
+            if (!isWithinHcmBounds(lat, lng)) {
+                throw new IllegalArgumentException("Coordinates out of Ho Chi Minh City bounds");
+            }
+
+            // Clamp battery về khoảng [0, 100]
+            double battery = Math.max(0.0, Math.min(100.0, batteryLevel));
             // Cập nhật database
             Optional<Drone> droneOpt = droneRepository.findById(droneId);
             if (droneOpt.isPresent()) {
@@ -43,7 +59,7 @@ public class DroneTrackingServiceImpl implements DroneTrackingService {
                 droneRepository.save(drone);
 
                 // Cập nhật cache
-                DroneGpsData gpsData = new DroneGpsData(droneId, lat, lng, batteryLevel, LocalDateTime.now());
+                DroneGpsData gpsData = new DroneGpsData(droneId, lat, lng, battery, LocalDateTime.now());
                 droneGpsCache.put(droneId, gpsData);
 
                 // Broadcast qua WebSocket
@@ -52,17 +68,25 @@ public class DroneTrackingServiceImpl implements DroneTrackingService {
                     "droneId", droneId,
                     "lat", lat,
                     "lng", lng,
-                    "batteryLevel", batteryLevel,
+                    "batteryLevel", battery,
                     "timestamp", LocalDateTime.now().toString()
                 );
                 
                 messagingTemplate.convertAndSend("/topic/drone-tracking", update);
                 log.debug("Sent GPS update for drone {}: lat={}, lng={}, battery={}%", 
-                    droneId, lat, lng, batteryLevel);
+                    droneId, lat, lng, battery);
             }
         } catch (Exception e) {
             log.error("Error updating drone GPS for drone {}: {}", droneId, e.getMessage());
         }
+    }
+
+    private boolean isValidLatLng(double lat, double lng) {
+        return lat >= -90.0 && lat <= 90.0 && lng >= -180.0 && lng <= 180.0;
+    }
+
+    private boolean isWithinHcmBounds(double lat, double lng) {
+        return lat >= HCMC_MIN_LAT && lat <= HCMC_MAX_LAT && lng >= HCMC_MIN_LNG && lng <= HCMC_MAX_LNG;
     }
 
     @Override

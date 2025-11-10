@@ -39,15 +39,51 @@ public class DroneAssignmentController {
 
     @PostMapping("/auto")
     @PreAuthorize("hasAnyRole('ADMIN','MERCHANT','STAFF')")
-    public ResponseEntity<?> autoAssign(@RequestBody Map<String, Long> payload) {
-        Long orderId = payload.get("orderId");
-        if (orderId == null) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body(Map.of("error", "MISSING_ORDER_ID", "message", "orderId is required"));
+    public ResponseEntity<?> autoAssign(@RequestBody(required = false) Map<String, Object> payload) {
+        // Đơn giản hóa demo: payload có thể bỏ trống. Nếu không có orderId, chọn đơn READY_FOR_DELIVERY cũ nhất.
+        Long orderId = null;
+        String orderCode = null;
+        if (payload != null) {
+            Object oid = payload.get("orderId");
+            if (oid != null) {
+                try {
+                    // Hỗ trợ số hoặc chuỗi số; bỏ qua nếu không phải số
+                    String s = String.valueOf(oid).trim();
+                    if (s.matches("^\\d+$")) {
+                        orderId = Long.parseLong(s);
+                    }
+                } catch (Exception ignored) {}
+            }
+            Object oc = payload.get("orderCode");
+            if (oc != null) {
+                orderCode = String.valueOf(oc).trim();
+            }
         }
 
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new EntityNotFoundException("Order not found: " + orderId));
+        Order order;
+        if (orderId == null && (orderCode == null || orderCode.isEmpty())) {
+            Pageable oneOldest = PageRequest.of(0, 1, Sort.by(Sort.Direction.ASC, "createdAt"));
+            Page<Order> page = orderRepository.findByStatus(Order.OrderStatus.READY_FOR_DELIVERY, oneOldest);
+            if (page.getContent().isEmpty()) {
+                return ResponseEntity.ok(Map.of(
+                        "success", true,
+                        "message", "No READY_FOR_DELIVERY orders"
+                ));
+            }
+            order = page.getContent().get(0);
+        } else if (orderId != null) {
+            order = orderRepository.findById(orderId).orElse(null);
+            if (order == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("success", false, "error", "Order not found: " + orderId));
+            }
+        } else {
+            order = orderRepository.findByOrderCode(orderCode).orElse(null);
+            if (order == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("success", false, "error", "Order not found by code: " + orderCode));
+            }
+        }
         Optional<DroneAssignment> assignedOpt = fleetService.autoAssignDrone(order);
         if (assignedOpt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
@@ -57,10 +93,12 @@ public class DroneAssignmentController {
         DroneAssignment assignment = assignedOpt.get();
 
         // Optional: immediately start delivery and simulation if client requests
-        boolean start = false;
+        boolean start = true; // Mặc định tự động bắt đầu mô phỏng cho demo đơn giản
         try {
-            Object startObj = ((Map<?,?>)payload).get("start");
-            start = (startObj instanceof Boolean) ? (Boolean) startObj : false;
+            Object startObj = payload != null ? ((Map<?,?>)payload).get("start") : null;
+            if (startObj != null) {
+                start = Boolean.TRUE.equals(startObj);
+            }
         } catch (Exception ignored) {}
 
         if (start) {

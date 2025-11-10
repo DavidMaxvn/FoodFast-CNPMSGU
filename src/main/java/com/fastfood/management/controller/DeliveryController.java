@@ -61,10 +61,46 @@ public class DeliveryController {
         return ResponseEntity.ok(delivery);
     }
 
-    @GetMapping("/{orderId}/track")
-    public ResponseEntity<TrackingResponse> trackDelivery(@PathVariable Long orderId) {
-        TrackingResponse tracking = deliveryService.trackDelivery(orderId);
-        return ResponseEntity.ok(tracking);
+    @GetMapping("/{id}/track")
+    public ResponseEntity<?> trackDelivery(@PathVariable("id") Long id) {
+        try {
+            if (id == null) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "error", "INVALID_ARGUMENT",
+                        "message", "Thiếu id để truy vết đơn giao"
+                ));
+            }
+
+            // Thử coi id là orderId trước
+            try {
+                TrackingResponse tracking = deliveryService.trackDelivery(id);
+                return ResponseEntity.ok(tracking);
+            } catch (IllegalArgumentException notOrder) {
+                // Nếu không phải orderId hợp lệ, fallback: coi id là deliveryId
+                Delivery delivery = deliveryRepository.findById(id)
+                        .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy delivery với id: " + id));
+                Long orderIdFromDelivery = delivery.getOrder() != null ? delivery.getOrder().getId() : null;
+                if (orderIdFromDelivery == null) {
+                    return ResponseEntity.status(404).body(Map.of(
+                            "error", "NOT_FOUND",
+                            "message", "Delivery " + id + " không có thông tin đơn hàng đi kèm"
+                    ));
+                }
+                TrackingResponse tracking = deliveryService.trackDelivery(orderIdFromDelivery);
+                return ResponseEntity.ok(tracking);
+            }
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "INVALID_ARGUMENT",
+                    "message", e.getMessage()
+            ));
+        } catch (Exception e) {
+            log.error("Error tracking delivery {}: {}", id, e.getMessage());
+            return ResponseEntity.status(500).body(Map.of(
+                    "error", "INTERNAL_ERROR",
+                    "message", e.getMessage()
+            ));
+        }
     }
 
     /**

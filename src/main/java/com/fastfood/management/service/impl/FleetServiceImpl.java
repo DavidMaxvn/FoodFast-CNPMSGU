@@ -5,6 +5,7 @@ import com.fastfood.management.repository.DeliveryRepository;
 import com.fastfood.management.repository.DroneAssignmentRepository;
 import com.fastfood.management.repository.DroneRepository;
 import com.fastfood.management.service.api.FleetService;
+import com.fastfood.management.service.api.DroneTrackingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ public class FleetServiceImpl implements FleetService {
     private final DroneRepository droneRepository;
     private final DroneAssignmentRepository assignmentRepository;
     private final DeliveryRepository deliveryRepository;
+    private final DroneTrackingService droneTrackingService;
 
     // Demo config for simple ETA calculation
     private static final double DISPATCH_RADIUS_KM = 10.0; // chỉ chọn drone trong bán kính này quanh cửa hàng
@@ -222,9 +224,21 @@ public class FleetServiceImpl implements FleetService {
         
         // Đặt drone về IDLE
         Drone drone = assignment.getDrone();
+        String oldStatus = drone.getStatus() != null ? drone.getStatus().name() : "UNKNOWN";
         drone.setStatus(Drone.DroneStatus.IDLE);
         droneRepository.save(drone);
         
+        // Broadcast trạng thái qua tracking service để tránh phụ thuộc Controller
+        try {
+            droneTrackingService.notifyDroneStatusChange(
+                drone.getId(),
+                oldStatus,
+                Drone.DroneStatus.IDLE.name()
+            );
+        } catch (Exception e) {
+            log.warn("Failed to notify drone status change for drone {}: {}", drone.getId(), e.getMessage());
+        }
+
         log.info("Completed assignment {} - Drone {} is now IDLE", assignmentId, drone.getId());
     }
     
