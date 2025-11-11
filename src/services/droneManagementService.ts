@@ -37,6 +37,13 @@ export interface DroneAssignment {
   etaSeconds?: number;
 }
 
+export interface PageMeta {
+  number: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
 export interface DronePosition {
   droneId: string;
   serialNumber: string;
@@ -84,6 +91,22 @@ class DroneManagementService {
       return response.data.drones || [];
     } catch (error) {
       console.error('Error fetching drones:', error);
+      throw error;
+    }
+  }
+
+  async getDronesPage(page: number, size: number, status?: string): Promise<{ drones: DroneFleet[]; page: PageMeta; total: number }>
+  {
+    try {
+      const params: any = { page, size };
+      if (status && status !== 'ALL') params.status = status;
+      const response = await this.apiClient.get('/drone-management/drones', { params });
+      const drones = response.data.drones || [];
+      const pageMeta = response.data.page || { number: page, size, totalElements: Array.isArray(drones) ? drones.length : 0, totalPages: 1 };
+      const total = Number(response.data.total ?? pageMeta.totalElements ?? (drones?.length || 0));
+      return { drones, page: pageMeta, total };
+    } catch (error) {
+      console.error('Error fetching paged drones:', error);
       throw error;
     }
   }

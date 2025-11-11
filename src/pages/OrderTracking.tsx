@@ -273,6 +273,7 @@ const OrderTracking: React.FC = () => {
   const [hasArrived, setHasArrived] = useState<boolean>(false);
   const [confirming, setConfirming] = useState<boolean>(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [canConfirm, setCanConfirm] = useState<boolean>(false);
   const [autoRunStarted, setAutoRunStarted] = useState<boolean>(false);
   
   const [loading, setLoading] = useState(true);
@@ -383,6 +384,141 @@ const OrderTracking: React.FC = () => {
     };
     run();
   }, [activeStep, order?.status, deliveryId, autoRunStarted]);
+
+  // Bật lại realtime: subscribe các topic liên quan tới delivery để cập nhật trạng thái
+  useEffect(() => {
+    if (!isConnected || !subscribe) return;
+    const subs: any[] = [];
+
+    // Theo dõi ETA của chuyến giao để suy ra trạng thái đến nơi
+    if (deliveryId) {
+      const etaSub = subscribe('/topic/delivery/eta', (eta: any) => {
+        try {
+          if (!eta) return;
+          const matches = String(eta.deliveryId || '') === String(deliveryId);
+          if (!matches) return;
+          const etaSeconds = Number(eta.etaSeconds ?? eta.eta ?? NaN);
+          if (Number.isFinite(etaSeconds)) {
+            setIsArrivingSoon(etaSeconds <= 180 && etaSeconds > 0);
+            const arrived = etaSeconds <= 0;
+            setHasArrived(arrived);
+            if (arrived) {
+              setActiveStep(5);
+              setOrder(prev => prev ? { ...prev, status: 'delivered' } : prev);
+            }
+          }
+          // Nếu backend gửi trường status cho delivery
+          const dStatus = String(eta.status || eta.deliveryStatus || '').toUpperCase();
+          if (dStatus === 'DELIVERED' || dStatus === 'COMPLETED') {
+            setHasArrived(true);
+            setActiveStep(5);
+            setOrder(prev => prev ? { ...prev, status: 'delivered' } : prev);
+          }
+        } catch (e) {
+          console.warn('Error handling ETA update', e);
+        }
+      });
+      if (etaSub) subs.push(etaSub);
+    }
+
+    // Theo dõi GPS của drone để cập nhật vị trí hiển thị
+    if (deliveryId) {
+      const gpsSub = subscribe('/topic/drone/gps', (update: any) => {
+        try {
+          if (!update) return;
+          const matches = String(update.deliveryId || '') === String(deliveryId);
+          if (!matches) return;
+          const fixed = clampToHcmRadius(normalizePair(update.latitude, update.longitude));
+          if (fixed) {
+            setDroneLocation(fixed);
+          } else if (isValidCoord(update.latitude, update.longitude)) {
+            setDroneLocation({ lat: Number(update.latitude), lng: Number(update.longitude) });
+          }
+        } catch (e) {
+          console.warn('Error handling GPS update', e);
+        }
+      });
+      if (gpsSub) subs.push(gpsSub);
+    }
+
+    // State/status của drone: nếu có, đồng bộ UI sang delivering/delivered
+    const stateSub = subscribe('/topic/drone/state', (change: any) => {
+      try {
+        if (!change) return;
+        const newStatus = String(change.newStatus || change.status || '').toUpperCase();
+        if (newStatus === 'DELIVERING') {
+          setActiveStep(4);
+          setOrder(prev => prev ? { ...prev, status: 'delivering' } : prev);
+        }
+        if (newStatus === 'IDLE' || newStatus === 'RETURNING') {
+          // Sau khi hoàn tất giao hàng, drone thường quay về/IDLE
+          // Chỉ đánh dấu delivered nếu đã có hasArrived hoặc ETA=0
+          if (hasArrived) {
+            setActiveStep(5);
+            setOrder(prev => prev ? { ...prev, status: 'delivered' } : prev);
+          }
+        }
+      } catch (e) {
+        console.warn('Error handling state update', e);
+      }
+    });
+    if (stateSub) subs.push(stateSub);
+
+    return () => {
+      subs.forEach(s => unsubscribe && unsubscribe(s));
+    };
+  }, [isConnected, subscribe, unsubscribe, deliveryId, hasArrived]);
+
+  // Realtime: subscribe vào topic đơn hàng để nhận trạng thái và GPS từ backend
+  useEffect(() => {
+    if (!isConnected || !subscribe || !id) return;
+    const subs: any[] = [];
+
+    const orderTopic = `/topic/orders/${id}`;
+    const orderSub = subscribe(orderTopic, (msg: any) => {
+      try {
+        const type = String(msg?.type || '').toUpperCase();
+        const payload = msg?.payload;
+
+        if (type === 'ORDER_STATUS_CHANGED') {
+          const raw = String(payload || '').toUpperCase();
+          const uiStatus: StatusKey = backendToUIStatus[raw] || 'confirmed';
+          setOrder(prev => prev ? { ...prev, status: uiStatus } : prev);
+          setActiveStep(statusToStep[uiStatus]);
+          setIsArrivingSoon(statusToStep[uiStatus] === 4);
+        }
+
+        if (type === 'GPS_UPDATE') {
+          const lat = Number(payload?.lat);
+          const lng = Number(payload?.lng);
+          const etaMinutes = Number(payload?.etaMinutes);
+          const fixed = clampToHcmRadius(normalizePair(lat, lng));
+          if (fixed) setDroneLocation(fixed);
+          else if (isValidCoord(lat, lng)) setDroneLocation({ lat, lng });
+          if (Number.isFinite(etaMinutes)) {
+            setIsArrivingSoon(etaMinutes <= 3 && etaMinutes > 0);
+            const arrived = etaMinutes <= 0;
+            setHasArrived(arrived);
+            if (arrived) {
+              setActiveStep(5);
+              setOrder(prev => prev ? { ...prev, status: 'delivered' } : prev);
+            }
+          }
+        }
+
+        if (type === 'DELIVERY_ARRIVING') {
+          setIsArrivingSoon(true);
+        }
+      } catch (e) {
+        console.warn('Error handling order topic message', e);
+      }
+    });
+    if (orderSub) subs.push(orderSub);
+
+    return () => {
+      subs.forEach(s => unsubscribe && unsubscribe(s));
+    };
+  }, [isConnected, subscribe, unsubscribe, id]);
 
   // API call to get current order status from server
   const fetchOrderFromAPI = async (orderId: string) => {
@@ -803,39 +939,17 @@ const OrderTracking: React.FC = () => {
     loadOrder();
   }, [id, userId]);
 
-  // Subscribe to real-time order status updates via WebSocket
+  // Khoá nút xác nhận 3s kể từ khi đơn chuyển sang đang giao
   useEffect(() => {
-    if (!id || !isConnected) return;
-
-    console.log('Subscribing to WebSocket updates for order:', id);
-    const sub = subscribe(`/topic/orders/${id}`, (message: any) => {
-      try {
-        console.log('Received WebSocket message:', message);
-        const type = message?.type ?? null;
-        const payload = message?.payload ?? message;
-
-        if (type === 'ORDER_STATUS_CHANGED' || typeof payload === 'string') {
-          const statusRaw = (typeof payload === 'string' ? payload : String(payload)).toUpperCase();
-          const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
-          console.log('Status updated via WebSocket:', statusRaw, '->', uiStatus);
-          
-          setOrder((prev) => prev ? { ...prev, status: uiStatus } : prev);
-          setActiveStep(statusToStep[uiStatus]);
-          setIsArrivingSoon(statusToStep[uiStatus] === 4);
-          
-        } else if (type === 'DELIVERY_ARRIVING') {
-          console.log('Delivery arriving notification received');
-          setIsArrivingSoon(true);
-        }
-      } catch (e) {
-        console.warn('Failed to process WS message:', e);
-      }
-    });
-
-    return () => {
-      unsubscribe(sub);
-    };
-  }, [id, isConnected, subscribe, unsubscribe]);
+    const isDelivering = activeStep === 4 || (order && order.status === 'delivering');
+    if (!isDelivering) {
+      setCanConfirm(false);
+      return;
+    }
+    setCanConfirm(false);
+    const timer = setTimeout(() => setCanConfirm(true), 3000);
+    return () => clearTimeout(timer);
+  }, [activeStep, order?.status]);
 
   // Nếu đơn ở trạng thái sẵn sàng giao (ready), tự động chuyển UI sang đang giao để mô phỏng
   useEffect(() => {
@@ -1036,21 +1150,28 @@ const OrderTracking: React.FC = () => {
                     onArrivingSoon={() => setIsArrivingSoon(true)}
                   />
                 </Box>
-                {hasArrived && activeStep === 4 && (
+                {activeStep === 4 && (
                   <Alert severity="info" sx={{ mb: 2 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Box>
-                        <AlertTitle>Drone đã tới điểm giao (W2)</AlertTitle>
+                        <AlertTitle>{hasArrived ? 'Drone đã tới điểm giao (W2)' : 'Đơn hàng đang giao'}</AlertTitle>
                         Vui lòng xác nhận đã nhận hàng để hoàn tất đơn.
                       </Box>
-                      <Button 
-                        variant="contained" 
-                        color="success" 
-                        disabled={confirming}
-                        onClick={() => confirmDelivery(false)}
-                      >
-                        Tôi xác nhận đã nhận hàng
-                      </Button>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Button 
+                          variant="contained" 
+                          color="success" 
+                          disabled={confirming || !canConfirm}
+                          onClick={() => confirmDelivery(false)}
+                        >
+                          Tôi xác nhận đã nhận hàng
+                        </Button>
+                        {!canConfirm && (
+                          <Typography variant="caption" color="text.secondary">
+                            Vui lòng đợi 3 giây trước khi xác nhận
+                          </Typography>
+                        )}
+                      </Box>
                     </Box>
                     {confirmError && (
                       <Typography variant="caption" color="error">{confirmError}</Typography>

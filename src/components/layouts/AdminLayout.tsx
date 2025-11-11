@@ -67,7 +67,8 @@ const AdminLayout: React.FC = () => {
     { text: 'Dashboard', icon: <Dashboard />, path: '/admin' },
     // { text: 'Menu Management', icon: <Restaurant />, path: '/admin/menu' },
     // { text: 'Inventory', icon: <Inventory />, path: '/admin/inventory' },
-    { text: 'Orders', icon: <ShoppingCart />, path: '/admin/orders' },
+    // Ẩn Orders theo yêu cầu
+    // { text: 'Orders', icon: <ShoppingCart />, path: '/admin/orders' },
     // { text: 'Staff', icon: <People />, path: '/admin/staff' },
     // { text: 'Kitchen Board', icon: <Kitchen />, path: '/admin/kitchen' },
     // Ẩn các tính năng drone chưa hoàn thiện cho demo
@@ -75,7 +76,8 @@ const AdminLayout: React.FC = () => {
     // { text: 'Drone Tracking', icon: <GpsFixed />, path: '/admin/drone-tracking' },
     { text: 'Drone Management', icon: <Settings />, path: '/admin/drone-management' },
     { text: 'Stores', icon: <Storefront />, path: '/admin/stores' },
-    { text: 'Store Approvals', icon: <HowToReg />, path: '/admin/store-approvals' },
+    // Ẩn Store Approvals theo yêu cầu
+    // { text: 'Store Approvals', icon: <HowToReg />, path: '/admin/store-approvals' },
   ];
 
   return (

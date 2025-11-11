@@ -125,7 +125,8 @@ function App() {
           <Route path="dashboard" element={<Dashboard />} />
          <Route path="menu" element={<MenuManagement />} /> 
           <Route path="inventory" element={<InventoryManagement />} />
-          <Route path="orders" element={<OrderManagement />} />
+          {/** Ẩn route orders theo yêu cầu **/}
+          {/** <Route path="orders" element={<OrderManagement />} /> **/}
           <Route path="staff" element={<StaffManagement />} />
           <Route path="kitchen" element={<KitchenBoard />} />
           <Route path="drones" element={<DroneConsole />} />

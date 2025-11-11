@@ -27,7 +27,8 @@ import {
   Switch,
   FormControlLabel,
   LinearProgress,
-  Snackbar
+  Snackbar,
+  TablePagination
 } from '@mui/material';
 import {
   Add,
@@ -123,6 +124,9 @@ const DroneManagement: React.FC = () => {
   const [activeAssignments, setActiveAssignments] = useState<DroneAssignment[]>([]);
   const [isEditingDrone, setIsEditingDrone] = useState(false);
   const [editDroneForm, setEditDroneForm] = useState<Partial<DroneFleetType>>({});
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [total, setTotal] = useState(0);
 
   // Tab: Đơn chờ gán (READY_FOR_DELIVERY)
   const PendingOrdersTab: React.FC = () => {
@@ -229,7 +233,7 @@ const DroneManagement: React.FC = () => {
     if (ENABLE_STATIONS) {
       loadDroneStations();
     }
-  }, [ENABLE_STATIONS]);
+  }, [ENABLE_STATIONS, page, rowsPerPage, statusFilter]);
 
   // Tải thống kê fleet từ API
   const loadFleetStats = async () => {
@@ -315,9 +319,9 @@ const DroneManagement: React.FC = () => {
     try {
       setLoading(true);
       
-      // Load real drone data from API
-      const dronesData = await DroneManagementService.getAllDrones();
-      console.log('Loaded drones:', dronesData);
+      // Load real drone data from API (paged)
+      const { drones: dronesData, total: totalCount } = await DroneManagementService.getDronesPage(page, rowsPerPage, statusFilter);
+      console.log('Loaded drones (paged):', { page, rowsPerPage, statusFilter, totalCount });
       // Normalize and clamp coordinates to HCM radius for consistent map rendering
       const normalizedDrones = (dronesData || []).map((d: any) => {
         const cur = clampToHcmRadius(normalizePair(d.currentLat, d.currentLng));
@@ -331,6 +335,7 @@ const DroneManagement: React.FC = () => {
         };
       });
       setDrones(normalizedDrones);
+      setTotal(totalCount || normalizedDrones.length);
 
       // Load fleet statistics
       loadFleetStats();
@@ -448,6 +453,7 @@ const DroneManagement: React.FC = () => {
         };
       });
       setDrones(normalizedMock);
+      setTotal(normalizedMock.length);
       setStations(mockStations);
     } finally {
       setLoading(false);
@@ -606,7 +612,7 @@ const DroneManagement: React.FC = () => {
             key={st}
             label={st === 'ALL' ? 'Tất cả' : getStatusLabel(st)}
             color={statusFilter === st ? 'primary' : 'default'}
-            onClick={() => setStatusFilter(st)}
+            onClick={() => { setStatusFilter(st); setPage(0); }}
             clickable
             size="small"
           />
@@ -795,6 +801,17 @@ const DroneManagement: React.FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2 }}>
+            <TablePagination
+              component="div"
+              count={total}
+              page={page}
+              onPageChange={(_, newPage) => setPage(newPage)}
+              rowsPerPage={rowsPerPage}
+              onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+              labelRowsPerPage="Số dòng mỗi trang"
+            />
+          </Box>
         </Grid>
       </Grid>
     </Box>
