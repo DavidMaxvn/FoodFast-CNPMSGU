@@ -30,22 +30,23 @@ Mở API docs (khi backend chạy local hoặc container):
 
 ---
 
-## Công nghệ sử dụng (tóm tắt với hình ảnh)
-Hai hàng ảnh, mỗi hàng 2 ảnh nhỏ (thay ảnh bằng file trong `./screenshots` hoặc đường dẫn web). Bạn có thể dán ảnh vào `./screenshots/` và tên file tương ứng.
+## Công nghệ sử dụng
 
 <div>
   <img src="./imageTech/leafleat.jfif" alt="map" width="200" style="margin:6px;"/>
+  <img src="./imageTech/reactjs.jfif" alt="reactjs" width="200" style="margin:6px;"/>
+  <img src="./imageTech/cloudinary.png" alt="cloudinary" width="200" style="margin:6px;"/>
+
 </div>
 <div>
   <img src="./imageTech/docker.png" alt="docker" width="200" style="margin:6px;"/>
   <img src="./imageTech/springboot.jfif" alt="spring-mysql-react" width="200" style="margin:6px;"/>
 </div>
 
-> Ví dụ bạn có sẵn: `![foodfast drone deli Customer Home page](./screenshots/Customer_HomePage.jpeg)` — dán ảnh vào `screenshots` và link sẽ hiển thị.
 
 ---
 
-## Chi tiết công nghệ (ngắn gọn)
+## Chi tiết công nghệ 
 - Frontend: ReactJS (TypeScript), react-leaflet để hiển thị bản đồ và theo dõi drone.
 - Backend: Spring Boot (3-layer architecture), JWT auth, WebSocket cho real-time updates, MySQL cho lưu trữ.
 - Thanh toán: VNPay (QR/Callback).
@@ -54,7 +55,7 @@ Hai hàng ảnh, mỗi hàng 2 ảnh nhỏ (thay ảnh bằng file trong `./scre
 
 ---
 
-## Docker: Build, Push và Run (cụ thể)
+## Docker: Build, Push và Run
 1) Build image locally:
 
 ```cmd
@@ -65,41 +66,24 @@ docker build -t YOUR_DOCKERHUB_USER/fastfood-backend:1.0.0 ./backend
 docker build -t YOUR_DOCKERHUB_USER/fastfood-frontend:1.0.0 ./frontend
 ```
 
-2) Push to Docker Hub (đăng nhập trước):
+2) Push to Docker Hub:
 
 ```cmd
 docker login
-docker push YOUR_DOCKERHUB_USER/fastfood-backend:1.0.0
-docker push YOUR_DOCKERHUB_USER/fastfood-frontend:1.0.0
+docker push YOUR_DOCKERHUB_USER/fastfood-backend:latest
+docker push YOUR_DOCKERHUB_USER/fastfood-frontend:latest
 ```
 
-3) Run with docker-compose (từ thư mục gốc chứa `docker-compose.yml`):
+3) Run with docker-compose :
 
 ```cmd
 # build và khởi chạy
 docker-compose up --build -d
-# kiểm tra logs
-docker-compose logs -f backend
-```
 
 ### Lưu ý môi trường (MySQL & Spring profiles)
 - Để MySQL hoạt động trong `docker-compose`, KHÔNG dùng `MYSQL_USER=root`. Thay vào đó dùng `MYSQL_ROOT_PASSWORD` để thiết lập mật khẩu root, hoặc tạo user khác bằng `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`.
 
-Ví dụ (docker-compose):
-```yaml
-services:
-  db:
-    image: mysql:8
-    environment:
-      MYSQL_ROOT_PASSWORD: strong_root_password
-      MYSQL_DATABASE: fastfood_db
-      MYSQL_USER: fastfood
-      MYSQL_PASSWORD: fastfood_pass
-    ports:
-      - "3306:3306"
-    volumes:
-      - fastfood_db_data:/var/lib/mysql
-```
+
 
 
 <h2>Project screenshots</h2>
