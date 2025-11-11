@@ -27,7 +27,7 @@ FoodFast Drone Delivery là hệ thống giao đồ ăn nhanh bằng drone, mang
 ---
 
 ## Swagger API
-Mở API docs (khi backend chạy local hoặc container):
+Mở API docs :
 
 - Swagger UI: `http://localhost:8080/api/swagger-ui/index.html`
 - OpenAPI JSON: `http://localhost:8080/api/v3/api-docs`
@@ -45,14 +45,13 @@ Mở API docs (khi backend chạy local hoặc container):
   <img src="./imageTech/cloudinary.png" alt="cloudinary" style="width:220px;height:140px;object-fit:cover;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);"/>
 </div>
 
-> Ghi chú: dán ảnh vào thư mục `./imageTech/` với tên tương ứng (leafleat.jfif, reactjs.jfif, docker.png, springboot.jfif, cloudinary.png) — mỗi ảnh sẽ tự động cân chỉnh và hiển thị đều.
 
 ---
 
 ## Chi tiết công nghệ
 - Frontend: ReactJS (TypeScript), react-leaflet để hiển thị bản đồ và theo dõi drone.
 - Backend: Spring Boot (3-layer architecture), JWT auth, WebSocket cho real-time updates, MySQL cho lưu trữ.
-- Thanh toán: VNPay (QR/Callback).
+- Thanh toán: VNPay (Callback).
 - Docker: Dockerfile cho `frontend` và `backend`, `docker-compose.yml` để khởi dựng multi-container.
 - Swagger / OpenAPI: `springdoc` cung cấp UI và JSON.
 
@@ -85,10 +84,6 @@ docker-compose up --build -d
 # xem logs
 docker-compose logs -f backend
 ```
-
-### Lưu ý môi trường (MySQL & Spring profiles)
-- Trong `docker-compose.yml` KHÔNG dùng `MYSQL_USER=root`. Sử dụng `MYSQL_ROOT_PASSWORD` hoặc tạo user khác (MYSQL_USER / MYSQL_PASSWORD).
-
 
 
 
