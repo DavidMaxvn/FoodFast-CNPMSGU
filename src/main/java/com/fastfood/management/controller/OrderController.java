@@ -4,11 +4,13 @@ import com.fastfood.management.dto.request.OrderRequest;
 import com.fastfood.management.dto.response.OrderCompactResponse;
 import com.fastfood.management.mapper.OrderMapper;
 import com.fastfood.management.dto.response.OrderResponse;
+import com.fastfood.management.dto.response.DeliveryResponse;
 import com.fastfood.management.entity.Order;
 import com.fastfood.management.entity.User;
 import com.fastfood.management.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import com.fastfood.management.service.api.OrderService;
+import com.fastfood.management.service.api.DeliveryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -33,6 +35,7 @@ public class OrderController {
 
     private final OrderService orderService;
     private final UserRepository userRepository;
+    private final DeliveryService deliveryService;
 
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
@@ -50,6 +53,72 @@ public class OrderController {
         User currentUser = resolveCurrentUser(principal);
         Order order = orderService.getOrderById(id, currentUser);
         return ResponseEntity.ok(order);
+    }
+
+    @PostMapping("/{id}/complete")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<?> completeOrder(
+            @PathVariable Long id,
+            @AuthenticationPrincipal org.springframework.security.core.userdetails.User principal) {
+        try {
+            User currentUser = resolveCurrentUser(principal);
+            // Lấy order và xác nhận quyền chủ đơn (đã được kiểm trong OrderService.updateOrderStatus khi set DELIVERED)
+            Order order = orderService.getOrderById(id, currentUser);
+
+            // Chỉ cho phép hoàn tất khi đơn đang ở trạng thái OUT_FOR_DELIVERY
+            if (order.getStatus() != Order.OrderStatus.OUT_FOR_DELIVERY) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(Map.of(
+                                "error", "BUSINESS_RULE_VIOLATION",
+                                "message", "Order phải ở trạng thái OUT_FOR_DELIVERY để xác nhận hoàn tất",
+                                "orderId", order.getId(),
+                                "status", order.getStatus().name()
+                        ));
+            }
+
+            // Nếu có delivery gắn với order, hoàn tất delivery (đồng thời set order DELIVERED ở service)
+            if (order.getDelivery() != null) {
+                DeliveryResponse dr = deliveryService.completeDelivery(order.getDelivery().getId());
+                return ResponseEntity.ok(Map.of(
+                        "success", true,
+                        "orderId", order.getId(),
+                        "deliveryId", dr.getId(),
+                        "status", "DELIVERED"
+                ));
+            }
+
+            // Nếu không có delivery, chỉ cập nhật trạng thái đơn hàng sang DELIVERED
+            Order updated = orderService.updateOrderStatus(id, Order.OrderStatus.DELIVERED, currentUser);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "orderId", updated.getId(),
+                    "status", "DELIVERED"
+            ));
+        } catch (org.springframework.security.access.AccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of(
+                            "error", "ACCESS_DENIED",
+                            "message", e.getMessage()
+                    ));
+        } catch (jakarta.persistence.EntityNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of(
+                            "error", "NOT_FOUND",
+                            "message", e.getMessage()
+                    ));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of(
+                            "error", "BUSINESS_RULE_VIOLATION",
+                            "message", e.getMessage()
+                    ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of(
+                            "error", "INVALID_REQUEST",
+                            "message", e.getMessage()
+                    ));
+        }
     }
 
     @GetMapping("/me")
@@ -87,7 +156,7 @@ public class OrderController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('MERCHANT', 'STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MERCHANT', 'STAFF', 'ADMIN', 'CUSTOMER')")
     public ResponseEntity<?> updateOrderStatus(
             @PathVariable Long id,
             @RequestParam("status") String status,

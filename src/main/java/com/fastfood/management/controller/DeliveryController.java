@@ -8,6 +8,7 @@ import com.fastfood.management.entity.DeliveryEvent;
 import com.fastfood.management.entity.Drone;
 import com.fastfood.management.repository.DeliveryRepository;
 import com.fastfood.management.repository.DroneRepository;
+import com.fastfood.management.repository.OrderRepository;
 import com.fastfood.management.service.api.DeliveryService;
 import com.fastfood.management.service.api.DroneSimulator;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class DeliveryController {
     private final DeliveryRepository deliveryRepository;
     private final DroneRepository droneRepository;
     private final DroneSimulator droneSimulator;
+    private final OrderRepository orderRepository;
 
 
     @GetMapping
@@ -57,33 +59,65 @@ public class DeliveryController {
 
     @PostMapping("/{id}/complete")
     public ResponseEntity<DeliveryResponse> completeDelivery(@PathVariable Long id) {
-        DeliveryResponse delivery = deliveryService.completeDelivery(id);
-        return ResponseEntity.ok(delivery);
+        try {
+            // Try treating id as a deliveryId first
+            DeliveryResponse delivery = deliveryService.completeDelivery(id);
+            return ResponseEntity.ok(delivery);
+        } catch (IllegalStateException badState) {
+            return ResponseEntity.badRequest().body(null);
+        } catch (IllegalArgumentException notDelivery) {
+            // Fallback: treat id as orderId and complete its delivery if present
+            try {
+                com.fastfood.management.entity.Order order = orderRepository.findById(id)
+                        .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn hàng với id: " + id));
+                Delivery linkedDelivery = order.getDelivery();
+                if (linkedDelivery == null) {
+                    return ResponseEntity.badRequest().body(new DeliveryResponse());
+                }
+                DeliveryResponse delivery = deliveryService.completeDelivery(linkedDelivery.getId());
+                return ResponseEntity.ok(delivery);
+            } catch (IllegalStateException e) {
+                return ResponseEntity.badRequest().body(null);
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().body(null);
+            }
+        }
     }
 
     @GetMapping("/{id}/track")
-    public ResponseEntity<?> trackDelivery(@PathVariable("id") Long id) {
+    public ResponseEntity<?> trackDelivery(@PathVariable("id") String id) {
         try {
-            if (id == null) {
+            if (id == null || id.trim().isEmpty() || "null".equalsIgnoreCase(id.trim())) {
                 return ResponseEntity.badRequest().body(Map.of(
                         "error", "INVALID_ARGUMENT",
                         "message", "Thiếu id để truy vết đơn giao"
                 ));
             }
 
+            // Parse id an toàn
+            Long parsedId;
+            try {
+                parsedId = Long.parseLong(id.trim());
+            } catch (NumberFormatException nfe) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "error", "INVALID_ARGUMENT",
+                        "message", "Id không hợp lệ: " + id
+                ));
+            }
+
             // Thử coi id là orderId trước
             try {
-                TrackingResponse tracking = deliveryService.trackDelivery(id);
+                TrackingResponse tracking = deliveryService.trackDelivery(parsedId);
                 return ResponseEntity.ok(tracking);
             } catch (IllegalArgumentException notOrder) {
                 // Nếu không phải orderId hợp lệ, fallback: coi id là deliveryId
-                Delivery delivery = deliveryRepository.findById(id)
-                        .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy delivery với id: " + id));
+                Delivery delivery = deliveryRepository.findById(parsedId)
+                        .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy delivery với id: " + parsedId));
                 Long orderIdFromDelivery = delivery.getOrder() != null ? delivery.getOrder().getId() : null;
                 if (orderIdFromDelivery == null) {
                     return ResponseEntity.status(404).body(Map.of(
                             "error", "NOT_FOUND",
-                            "message", "Delivery " + id + " không có thông tin đơn hàng đi kèm"
+                            "message", "Delivery " + parsedId + " không có thông tin đơn hàng đi kèm"
                     ));
                 }
                 TrackingResponse tracking = deliveryService.trackDelivery(orderIdFromDelivery);

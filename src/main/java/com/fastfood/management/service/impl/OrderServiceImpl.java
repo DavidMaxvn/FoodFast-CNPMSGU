@@ -183,9 +183,14 @@ public class OrderServiceImpl implements OrderService {
                 break;
             case ASSIGNED:
             case OUT_FOR_DELIVERY:
-            case DELIVERED:
                 if (!isAdmin) {
-                    throw new IllegalStateException("Chỉ admin/hệ thống được cập nhật trạng thái giao hàng (ASSIGNED/OUT_FOR_DELIVERY/DELIVERED)");
+                    throw new IllegalStateException("Chỉ admin/hệ thống được cập nhật trạng thái giao hàng (ASSIGNED/OUT_FOR_DELIVERY)");
+                }
+                break;
+            case DELIVERED:
+                // Cho phép chủ đơn xác nhận hoàn thành sau khi giao xong
+                if (!(isOwner || isAdmin)) {
+                    throw new IllegalStateException("Chỉ khách hàng chủ đơn hoặc admin được phép xác nhận hoàn thành (DELIVERED)");
                 }
                 break;
             case CANCELLED:
@@ -209,6 +214,27 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalStateException("Đơn chưa thanh toán (PAID), không thể chuyển trạng thái");
         }
         
+        // Nếu xác nhận DELIVERED từ OUT_FOR_DELIVERY: yêu cầu chờ tối thiểu 3 giây
+        if (status == Order.OrderStatus.DELIVERED && oldStatus == Order.OrderStatus.OUT_FOR_DELIVERY) {
+            java.time.LocalDateTime outForDeliveryAt = null;
+            java.util.List<OrderActivity> activitiesDesc = orderActivityRepository.findByOrderIdOrderByCreatedAtDesc(order.getId());
+            for (OrderActivity a : activitiesDesc) {
+                if (a.getToStatus() == Order.OrderStatus.OUT_FOR_DELIVERY) {
+                    outForDeliveryAt = a.getCreatedAt();
+                    break;
+                }
+            }
+            if (outForDeliveryAt == null) {
+                outForDeliveryAt = order.getUpdatedAt();
+            }
+            if (outForDeliveryAt != null) {
+                long elapsed = java.time.Duration.between(outForDeliveryAt, java.time.LocalDateTime.now()).getSeconds();
+                if (elapsed < 3) {
+                    throw new IllegalStateException("Vui lòng đợi 3 giây trước khi xác nhận hoàn thành đơn hàng");
+                }
+            }
+        }
+
         // Validate status transition
         validateStatusTransition(oldStatus, status);
         
@@ -225,13 +251,35 @@ public class OrderServiceImpl implements OrderService {
                 .build();
         orderActivityRepository.save(activity);
 
-        // Khi READY_FOR_DELIVERY: thử tự động gán drone. Nếu không có drone rảnh, tạo Delivery PENDING.
+        // Khi READY_FOR_DELIVERY: tự động gán drone và bỏ qua ASSIGNED -> chuyển thẳng OUT_FOR_DELIVERY.
         if (status == Order.OrderStatus.READY_FOR_DELIVERY) {
             Optional<DroneAssignment> assignmentOpt = fleetService.autoAssignDrone(order);
             if (assignmentOpt.isEmpty()) {
+                // Không có drone rảnh: tạo delivery PENDING để UI theo dõi
                 if (order.getDelivery() == null) {
                     insertDeliveryForOrder(order);
                 }
+            } else {
+                // Có drone: cập nhật order và delivery ngay lập tức
+                Order.OrderStatus prev = order.getStatus();
+                order.setStatus(Order.OrderStatus.OUT_FOR_DELIVERY);
+                order = orderRepository.save(order);
+
+                Delivery delivery = order.getDelivery();
+                if (delivery != null) {
+                    delivery.setStatus(Delivery.DeliveryStatus.IN_PROGRESS);
+                    delivery.setSegmentStartTime(java.time.LocalDateTime.now());
+                    deliveryRepository.save(delivery);
+                }
+
+                // Ghi lại activity cho chuyển trạng thái tự động
+                OrderActivity autoActivity = OrderActivity.builder()
+                        .order(order)
+                        .actor(currentUser)
+                        .fromStatus(prev)
+                        .toStatus(Order.OrderStatus.OUT_FOR_DELIVERY)
+                        .build();
+                orderActivityRepository.save(autoActivity);
             }
         }
         

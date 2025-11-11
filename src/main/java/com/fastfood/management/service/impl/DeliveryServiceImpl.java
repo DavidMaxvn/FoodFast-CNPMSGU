@@ -140,6 +140,12 @@ public class DeliveryServiceImpl implements DeliveryService {
     public DeliveryResponse completeDelivery(Long deliveryId) {
         Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy delivery với id: " + deliveryId));
+
+        // Chỉ cho phép hoàn tất khi order đang ở trạng thái OUT_FOR_DELIVERY
+        Order order = delivery.getOrder();
+        if (order != null && order.getStatus() != Order.OrderStatus.OUT_FOR_DELIVERY) {
+            throw new IllegalStateException("Order phải ở trạng thái OUT_FOR_DELIVERY trước khi hoàn tất");
+        }
         delivery.setStatus(Delivery.DeliveryStatus.COMPLETED);
         DeliveryEvent doneEvent = DeliveryEvent.builder()
                 .delivery(delivery)
@@ -150,7 +156,6 @@ public class DeliveryServiceImpl implements DeliveryService {
         deliveryRepository.save(delivery);
 
         // Cập nhật trạng thái đơn hàng sang DELIVERED nếu có
-        Order order = delivery.getOrder();
         if (order != null) {
             order.setStatus(Order.OrderStatus.DELIVERED);
             order.setUpdatedAt(LocalDateTime.now());

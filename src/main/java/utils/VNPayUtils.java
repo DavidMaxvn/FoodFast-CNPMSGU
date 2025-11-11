@@ -56,15 +56,25 @@ public class VNPayUtils {
                 .collect(Collectors.joining("&"));
     }
 
+    // Default timezone helpers (backward compatibility: GMT+7)
     public static String getCreateDate() {
-        SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMddHHmmss");
-        Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("GMT+7"));
-        return formatter.format(cal.getTime());
+        return getCreateDate("GMT+7");
     }
 
     public static String getExpireDate() {
+        return getExpireDate("GMT+7");
+    }
+
+    // Timezone-aware helpers
+    public static String getCreateDate(String timezoneId) {
         SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMddHHmmss");
-        Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("GMT+7"));
+        Calendar cal = Calendar.getInstance(TimeZone.getTimeZone(timezoneId != null ? timezoneId : "GMT+7"));
+        return formatter.format(cal.getTime());
+    }
+
+    public static String getExpireDate(String timezoneId) {
+        SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMddHHmmss");
+        Calendar cal = Calendar.getInstance(TimeZone.getTimeZone(timezoneId != null ? timezoneId : "GMT+7"));
 
         // Add 15 minutes to the current date and time
         cal.add(Calendar.MINUTE, 15);

@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import utils.VNPayUtils;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +64,25 @@ public class PaymentServiceImpl implements PaymentService {
         }
         if (paymentRequest.getLocale() != null) {
             vnpParams.put("vnp_Locale", paymentRequest.getLocale());
+        }
+
+        // Demo fallback: if demo flag enabled OR missing TMN code/secret,
+        // generate a local return URL to avoid sandbox errors by default
+        boolean missingTmn = vnpParams.get("vnp_TmnCode") == null || vnpParams.get("vnp_TmnCode").isEmpty();
+        boolean missingSecret = vnPayConfig.getVnpHashSecret() == null || vnPayConfig.getVnpHashSecret().isEmpty();
+        if (vnPayConfig.isVnpDemo() || missingTmn || missingSecret) {
+            Map<String, String> mockParams = new HashMap<>();
+            mockParams.put("vnp_TxnRef", payment.getTransactionReference());
+            mockParams.put("vnp_ResponseCode", "00");
+            mockParams.put("vnp_Amount", toVnpAmount(payment.getAmount()));
+            mockParams.put("vnp_OrderInfo", String.valueOf(order.getId()));
+            String mockQuery = VNPayUtils.generateQueryUrl(mockParams, true);
+            String paymentUrl = vnpParams.get("vnp_ReturnUrl") + "?" + mockQuery;
+
+            VNPayResponse response = new VNPayResponse();
+            response.setPaymentUrl(paymentUrl);
+            response.setTransactionReference(payment.getTransactionReference());
+            return response;
         }
 
         String queryUrl = VNPayUtils.generateQueryUrl(vnpParams, true);

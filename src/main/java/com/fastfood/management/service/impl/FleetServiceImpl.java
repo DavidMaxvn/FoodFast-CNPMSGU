@@ -94,8 +94,8 @@ public class FleetServiceImpl implements FleetService {
         drone.setLastAssignedAt(LocalDateTime.now());
         droneRepository.save(drone);
         
-        // Cập nhật trạng thái order
-        order.setStatus(Order.OrderStatus.ASSIGNED);
+        // Không cập nhật trạng thái order tại đây nữa
+        // Việc chuyển READY_FOR_DELIVERY -> OUT_FOR_DELIVERY sẽ do OrderService xử lý
         
         // Tạo hoặc tái sử dụng delivery record để tránh vi phạm unique constraint (order_id)
         Delivery delivery = order.getDelivery();

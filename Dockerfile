@@ -20,7 +20,7 @@ COPY --from=builder /app/target/*.jar /app/app.jar
 
 # Default envs (can be overridden by docker-compose)
 ENV PORT=8080 \
-    SPRING_PROFILES_ACTIVE=prod \
+    SPRING_PROFILES_ACTIVE="" \
     JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=20.0"
 
 EXPOSE 8080

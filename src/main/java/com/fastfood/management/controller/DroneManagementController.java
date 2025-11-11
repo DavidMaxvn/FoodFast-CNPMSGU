@@ -68,25 +68,108 @@ public class DroneManagementController {
     }
 
     /**
-     * GET /api/drone-management/drones - Lấy danh sách tất cả drone
+     * GET /api/drone-management/drones - Lấy danh sách drone có hỗ trợ phân trang và lọc trạng thái
      */
     @GetMapping("/drones")
-    public ResponseEntity<?> getAllDrones() {
+    public ResponseEntity<?> getAllDrones(
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size,
+            @RequestParam(value = "status", required = false) String status
+    ) {
         try {
-            List<Drone> drones = droneRepository.findAll();
-            List<Map<String, Object>> droneList = drones.stream()
-                .map(this::buildDroneResponse)
-                .collect(Collectors.toList());
-            
-            return ResponseEntity.ok(Map.of(
-                "success", true,
-                "drones", droneList,
-                "total", drones.size()
-            ));
+            // Nếu không có tham số phân trang, trả về danh sách như trước để giữ tương thích
+            if (page == null || size == null) {
+                List<Drone> drones = droneRepository.findAll();
+                List<Map<String, Object>> droneList = drones.stream()
+                        .map(this::buildDroneResponse)
+                        .collect(Collectors.toList());
+
+                return ResponseEntity.ok(Map.of(
+                        "success", true,
+                        "drones", droneList,
+                        "total", drones.size()
+                ));
+            }
+
+            int p = Math.max(0, page);
+            int s = Math.max(1, size);
+
+            org.springframework.data.domain.Pageable pageable =
+                    org.springframework.data.domain.PageRequest.of(p, s,
+                            // Sort theo 'id' để tránh lỗi nếu DB chưa có cột 'created_at'
+                            org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "id"));
+
+            org.springframework.data.domain.Page<Drone> pageResult;
+
+            Drone.DroneStatus filterStatus = null;
+            java.util.List<Drone.DroneStatus> statusesFilter = null;
+            if (status != null && !status.isBlank()) {
+                String normalized = status.trim().toUpperCase();
+                // Cho phép "DELIVERING" ánh xạ về nhóm trạng thái vận chuyển
+                if ("DELIVERING".equals(normalized)) {
+                    statusesFilter = java.util.Arrays.asList(
+                            Drone.DroneStatus.EN_ROUTE_TO_STORE,
+                            Drone.DroneStatus.EN_ROUTE_TO_CUSTOMER,
+                            Drone.DroneStatus.ARRIVING
+                    );
+                } else {
+                    try {
+                        filterStatus = Drone.DroneStatus.valueOf(normalized);
+                    } catch (IllegalArgumentException ignored) {
+                        filterStatus = null;
+                    }
+                }
+            }
+
+            try {
+                if (statusesFilter != null && !statusesFilter.isEmpty()) {
+                    pageResult = droneRepository.findByStatusIn(statusesFilter, pageable);
+                } else if (filterStatus != null) {
+                    pageResult = droneRepository.findByStatus(filterStatus, pageable);
+                } else {
+                    pageResult = droneRepository.findAll(pageable);
+                }
+            } catch (Exception repoEx) {
+                log.error("Paged query failed, falling back to in-memory pagination: {}", repoEx.getMessage());
+                // Fallback: load all then paginate in-memory to avoid 500 for legacy schemas
+                List<Drone> all = droneRepository.findAll();
+                final java.util.List<Drone.DroneStatus> statusesFilterFinal = statusesFilter;
+                final Drone.DroneStatus filterStatusFinal = filterStatus;
+                if (statusesFilterFinal != null && !statusesFilterFinal.isEmpty()) {
+                    final java.util.Set<Drone.DroneStatus> set = new java.util.HashSet<>(statusesFilterFinal);
+                    all = all.stream().filter(d -> set.contains(d.getStatus())).collect(Collectors.toList());
+                } else if (filterStatusFinal != null) {
+                    all = all.stream().filter(d -> d.getStatus() == filterStatusFinal).collect(Collectors.toList());
+                }
+                int from = Math.min(p * s, all.size());
+                int to = Math.min(from + s, all.size());
+                List<Drone> slice = all.subList(from, to);
+                pageResult = new org.springframework.data.domain.PageImpl<>(slice, pageable, all.size());
+            }
+
+            List<Map<String, Object>> droneList = pageResult.getContent().stream()
+                    .map(this::buildDroneResponse)
+                    .collect(Collectors.toList());
+
+            Map<String, Object> pageMeta = Map.of(
+                    "number", pageResult.getNumber(),
+                    "size", pageResult.getSize(),
+                    "totalElements", pageResult.getTotalElements(),
+                    "totalPages", pageResult.getTotalPages()
+            );
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("success", true);
+            payload.put("drones", droneList);
+            payload.put("page", pageMeta);
+            payload.put("total", pageResult.getTotalElements());
+            // Cho phép status null mà không gây lỗi (Map.of không chấp nhận null)
+            payload.put("status", status);
+            return ResponseEntity.ok(payload);
         } catch (Exception e) {
             log.error("Error fetching drones: {}", e.getMessage());
             return ResponseEntity.badRequest()
-                .body(Map.of("error", e.getMessage()));
+                    .body(Map.of("error", e.getMessage()));
         }
     }
 

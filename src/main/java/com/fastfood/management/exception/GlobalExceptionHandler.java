@@ -1,6 +1,7 @@
 package com.fastfood.management.exception;
 
 import jakarta.persistence.EntityNotFoundException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -73,6 +74,14 @@ public class GlobalExceptionHandler {
         body.put("message", "Dữ liệu vi phạm ràng buộc (unique/not null)");
         body.put("error", "DATA_INTEGRITY_VIOLATION");
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("message", "Không có quyền truy cập");
+        body.put("error", "ACCESS_DENIED");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
     @ExceptionHandler(Exception.class)
