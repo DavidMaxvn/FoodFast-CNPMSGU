@@ -1,29 +1,106 @@
-SGU2025_CNPM_NHOM22
-Học phần: Công nghệ phần mềm
+# SGU2025_CNPM_NHOM22
 
-Giảng viên: TS.Nguyễn Quốc Huy
+**Học phần:** Công nghệ phần mềm
 
-Lớp: DCT122C3
+**Giảng viên:** TS. Nguyễn Quốc Huy
 
-Nhóm: 22
+**Lớp:** DCT122C3
 
-Thành viên:
+**Nhóm:** 22
 
-Lê Song Nhật Quyền - 3122411174
-Đỗ Phú Thành - 3122411189
+## Thành viên
+- Lê Song Nhật Quyền - 3122411174
+- Đỗ Phú Thành - 3122411189
 
-Tên đề tài: 2/ BE Dev theo hướng 3 lớp cho FoodFast với Drone Delivery
+---
 
-Giới thiệu & mô tả
+# Tên đề tài
+**2/ BE Dev theo hướng 3 lớp cho FoodFast với Drone Delivery**
+
+## Giới thiệu & mô tả
 FoodFast Drone Delivery là hệ thống giao đồ ăn nhanh bằng drone, mang đến trải nghiệm giao hàng hiện đại và tiện lợi. Người dùng có thể đặt món ăn từ các cửa hàng đối tác, thanh toán trực tuyến qua QR code, và nhận đồ ăn trực tiếp từ drone tại vị trí của mình.
 
-Công nghệ sử dụng
+---
 
-Frontend:
-ReactJS cho Website: Giao diện (UI/UX) cho khách hàng đặt đồ ăn, theo dõi đơn hàng với GPS tích hợp vào drone. (Admin Portal DashBoard): quản lý merchant, store, menu, đơn hàng, drone fleet và giám sát tracking. 
+## Swagger API
+Mở API docs (khi backend chạy local hoặc container):
 
-Backend: 
-Srpingboot, Postman, VNPay API, Database MySQL, Drone services và các công nghệ khác sẽ được mô tả trong repo riêng biệt.
+- Swagger UI: `http://localhost:8080/api/swagger-ui/index.html`
+- OpenAPI JSON: `http://localhost:8080/api/v3/api-docs`
+
+---
+
+## Công nghệ sử dụng (tóm tắt với hình ảnh)
+Hai hàng ảnh, mỗi hàng 2 ảnh nhỏ (thay ảnh bằng file trong `./screenshots` hoặc đường dẫn web). Bạn có thể dán ảnh vào `./screenshots/` và tên file tương ứng.
+
+<div>
+  <img src="./screenshots/map.png" alt="map" width="200" style="margin:6px;"/>
+  <img src="./screenshots/routing.png" alt="routing" width="200" style="margin:6px;"/>
+</div>
+<div>
+  <img src="./screenshots/docker.png" alt="docker" width="200" style="margin:6px;"/>
+  <img src="./screenshots/spring_mysql_react.png" alt="spring-mysql-react" width="200" style="margin:6px;"/>
+</div>
+
+> Ví dụ bạn có sẵn: `![foodfast drone deli Customer Home page](./screenshots/Customer_HomePage.jpeg)` — dán ảnh vào `screenshots` và link sẽ hiển thị.
+
+---
+
+## Chi tiết công nghệ (ngắn gọn)
+- Frontend: ReactJS (TypeScript), react-leaflet để hiển thị bản đồ và theo dõi drone.
+- Backend: Spring Boot (3-layer architecture), JWT auth, WebSocket cho real-time updates, MySQL cho lưu trữ.
+- Thanh toán: VNPay (QR/Callback).
+- Docker: Dockerfile cho `frontend` và `backend`, `docker-compose.yml` để khởi dựng multi-container.
+- Swagger / OpenAPI: `springdoc` cung cấp UI và JSON.
+
+---
+
+## Docker: Build, Push và Run (cụ thể)
+1) Build image locally:
+
+```cmd
+cd C:\Users\dell\Desktop\fastfood
+# Backend image
+docker build -t YOUR_DOCKERHUB_USER/fastfood-backend:1.0.0 ./backend
+# Frontend image
+docker build -t YOUR_DOCKERHUB_USER/fastfood-frontend:1.0.0 ./frontend
+```
+
+2) Push to Docker Hub (đăng nhập trước):
+
+```cmd
+docker login
+docker push YOUR_DOCKERHUB_USER/fastfood-backend:1.0.0
+docker push YOUR_DOCKERHUB_USER/fastfood-frontend:1.0.0
+```
+
+3) Run with docker-compose (từ thư mục gốc chứa `docker-compose.yml`):
+
+```cmd
+# build và khởi chạy
+docker-compose up --build -d
+# kiểm tra logs
+docker-compose logs -f backend
+```
+
+### Lưu ý môi trường (MySQL & Spring profiles)
+- Để MySQL hoạt động trong `docker-compose`, KHÔNG dùng `MYSQL_USER=root`. Thay vào đó dùng `MYSQL_ROOT_PASSWORD` để thiết lập mật khẩu root, hoặc tạo user khác bằng `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`.
+
+Ví dụ (docker-compose):
+```yaml
+services:
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: strong_root_password
+      MYSQL_DATABASE: fastfood_db
+      MYSQL_USER: fastfood
+      MYSQL_PASSWORD: fastfood_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - fastfood_db_data:/var/lib/mysql
+```
 
 
 <h2>Project screenshots</h2>
