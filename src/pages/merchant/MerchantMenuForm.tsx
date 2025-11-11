@@ -27,8 +27,6 @@ const MerchantMenuForm: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const MAX_SIZE = 10 * 1024 * 1024; // 10MB
   const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-  const MIN_WIDTH = 800;
-  const MIN_HEIGHT = 600;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const onClearImage = () => setImageUrl('');
@@ -78,15 +76,6 @@ const MerchantMenuForm: React.FC = () => {
     if (file.size > MAX_SIZE) {
       alert('Ảnh vượt quá 10MB. Vui lòng chọn ảnh nhỏ hơn.');
       return;
-    }
-    try {
-      const { width, height } = await readImageDimensions(file);
-      if (width < MIN_WIDTH || height < MIN_HEIGHT) {
-        alert(`Ảnh quá nhỏ (${width}x${height}). Vui lòng chọn ảnh tối thiểu ${MIN_WIDTH}x${MIN_HEIGHT}.`);
-        return;
-      }
-    } catch {
-      // ignore, proceed upload
     }
     try {
       setUploading(true);
@@ -143,7 +132,7 @@ const MerchantMenuForm: React.FC = () => {
           </TextField>
         </Grid>
         <Grid item xs={12}>
-          <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 700 }}>Ảnh cửa hàng</Typography>
+          <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 700 }}>Ảnh món</Typography>
           <Box
             sx={{
               position: 'relative',
@@ -192,7 +181,7 @@ const MerchantMenuForm: React.FC = () => {
               Xóa ảnh
             </Button>
             <Typography variant="caption" color="text.secondary">
-              Chấp nhận: JPG, PNG, GIF, WebP. Tối đa: 10MB. Khuyến nghị ≥ 800×600
+              Chấp nhận: JPG, PNG, GIF, WebP. Tối đa: 10MB. Khuyến nghị (không bắt buộc) ≥ 800×600
             </Typography>
           </Stack>
         </Grid>
