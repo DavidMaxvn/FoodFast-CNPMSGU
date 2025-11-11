@@ -42,7 +42,9 @@ import {
 import { RootState } from '../store';
 import TrackingMap from '../components/TrackingMap';
 import api from '../services/api';
-import { completeDelivery, completeDeliveryByDeliveryId } from '../services/order';
+import { completeDelivery, completeDeliveryByDeliveryId, updateOrderStatus } from '../services/order';
+import droneManagementService from '../services/droneManagementService';
+import { droneService } from '../services/droneService';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 // Order status steps
@@ -271,6 +273,8 @@ const OrderTracking: React.FC = () => {
   const [hasArrived, setHasArrived] = useState<boolean>(false);
   const [confirming, setConfirming] = useState<boolean>(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [canConfirm, setCanConfirm] = useState<boolean>(false);
+  const [autoRunStarted, setAutoRunStarted] = useState<boolean>(false);
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -293,6 +297,228 @@ const OrderTracking: React.FC = () => {
     if (stepIndex === activeStep) return 'primary.main';
     return 'grey.400';
   };
+
+  // Auto confirm delivery helper (reused by button and onArrived)
+  const confirmDelivery = async (auto: boolean) => {
+    if (!order) return;
+    if (!auto) setConfirming(true);
+    setConfirmError(null);
+    try {
+      const orderIdNum = Number(order.id);
+      const deliveryIdNum = Number(deliveryId);
+      const useOrderEndpoint = !Number.isFinite(deliveryIdNum) || deliveryIdNum === orderIdNum;
+
+      if (useOrderEndpoint) {
+        await completeDelivery(orderIdNum);
+      } else {
+        try {
+          await completeDeliveryByDeliveryId(deliveryIdNum);
+        } catch (e: any) {
+          const msg = (e?.response?.data?.error || e?.response?.data?.message || '').toString().toUpperCase();
+          if (e?.response?.status === 400 || msg.includes('INVALID_ARGUMENT')) {
+            await completeDelivery(orderIdNum);
+          } else {
+            throw e;
+          }
+        }
+      }
+
+      try { await updateOrderStatus(orderIdNum, 'COMPLETED'); } catch {}
+
+      // Update drone status to IDLE/available
+      try {
+        if (Number.isFinite(deliveryIdNum) && deliveryIdNum !== orderIdNum) {
+          const tracking = await droneManagementService.getDeliveryTracking(String(deliveryIdNum));
+          const droneId = tracking?.droneId;
+          if (droneId) {
+            await droneManagementService.updateDroneStatus(String(droneId), 'IDLE');
+          }
+        }
+      } catch {}
+
+      setActiveStep(5);
+    } catch (e: any) {
+      setConfirmError(e?.response?.data?.message || 'Xác nhận thất bại, vui lòng thử lại');
+    } finally {
+      if (!auto) setConfirming(false);
+    }
+  };
+
+  // Tự động chuyển sang DELIVERING và khởi động mô phỏng khi activeStep=4 (ASSIGNED/OUT_FOR_DELIVERY)
+  useEffect(() => {
+    const run = async () => {
+      if (autoRunStarted) return;
+      const hasDelivery = Number.isFinite(deliveryId);
+      const shouldStart = hasDelivery && (activeStep === 4 || (!!order && (order.status === 'ready' || order.status === 'delivering')));
+      if (!shouldStart) return;
+
+      setAutoRunStarted(true);
+
+      // Đồng bộ UI: chuyển trạng thái đơn sang delivering nếu chưa
+      if (order && order.status !== 'delivering') {
+        setOrder({ ...order, status: 'delivering' });
+      }
+      setActiveStep(4);
+
+      // Cập nhật backend: chuyển order sang DELIVERING
+      try { if (order) await updateOrderStatus(Number(order.id), 'DELIVERING'); } catch {}
+
+      // Khởi động mô phỏng phía backend nếu có
+      try { await droneService.startDelivery(String(deliveryId)); } catch { try { await droneManagementService.resumeDelivery(String(deliveryId)); } catch {} }
+
+      // Cập nhật trạng thái drone -> DELIVERING nếu lấy được droneId
+      try {
+        const tracking = await droneManagementService.getDeliveryTracking(String(deliveryId!));
+        const droneId = tracking?.droneId;
+        if (droneId) {
+          await droneManagementService.updateDroneStatus(String(droneId), 'DELIVERING');
+        }
+      } catch {}
+
+      // Đẩy tiến độ mỗi giây để ETA giảm dần
+      for (let t = 10; t >= 1; t--) {
+        setTimeout(() => {
+          droneManagementService.updateDeliveryProgress(String(deliveryId!), 1, t, 'IN_PROGRESS').catch(() => {});
+        }, (10 - t) * 1000);
+      }
+    };
+    run();
+  }, [activeStep, order?.status, deliveryId, autoRunStarted]);
+
+  // Bật lại realtime: subscribe các topic liên quan tới delivery để cập nhật trạng thái
+  useEffect(() => {
+    if (!isConnected || !subscribe) return;
+    const subs: any[] = [];
+
+    // Theo dõi ETA của chuyến giao để suy ra trạng thái đến nơi
+    if (deliveryId) {
+      const etaSub = subscribe('/topic/delivery/eta', (eta: any) => {
+        try {
+          if (!eta) return;
+          const matches = String(eta.deliveryId || '') === String(deliveryId);
+          if (!matches) return;
+          const etaSeconds = Number(eta.etaSeconds ?? eta.eta ?? NaN);
+          if (Number.isFinite(etaSeconds)) {
+            setIsArrivingSoon(etaSeconds <= 180 && etaSeconds > 0);
+            const arrived = etaSeconds <= 0;
+            setHasArrived(arrived);
+            if (arrived) {
+              setActiveStep(5);
+              setOrder(prev => prev ? { ...prev, status: 'delivered' } : prev);
+            }
+          }
+          // Nếu backend gửi trường status cho delivery
+          const dStatus = String(eta.status || eta.deliveryStatus || '').toUpperCase();
+          if (dStatus === 'DELIVERED' || dStatus === 'COMPLETED') {
+            setHasArrived(true);
+            setActiveStep(5);
+            setOrder(prev => prev ? { ...prev, status: 'delivered' } : prev);
+          }
+        } catch (e) {
+          console.warn('Error handling ETA update', e);
+        }
+      });
+      if (etaSub) subs.push(etaSub);
+    }
+
+    // Theo dõi GPS của drone để cập nhật vị trí hiển thị
+    if (deliveryId) {
+      const gpsSub = subscribe('/topic/drone/gps', (update: any) => {
+        try {
+          if (!update) return;
+          const matches = String(update.deliveryId || '') === String(deliveryId);
+          if (!matches) return;
+          const fixed = clampToHcmRadius(normalizePair(update.latitude, update.longitude));
+          if (fixed) {
+            setDroneLocation(fixed);
+          } else if (isValidCoord(update.latitude, update.longitude)) {
+            setDroneLocation({ lat: Number(update.latitude), lng: Number(update.longitude) });
+          }
+        } catch (e) {
+          console.warn('Error handling GPS update', e);
+        }
+      });
+      if (gpsSub) subs.push(gpsSub);
+    }
+
+    // State/status của drone: nếu có, đồng bộ UI sang delivering/delivered
+    const stateSub = subscribe('/topic/drone/state', (change: any) => {
+      try {
+        if (!change) return;
+        const newStatus = String(change.newStatus || change.status || '').toUpperCase();
+        if (newStatus === 'DELIVERING') {
+          setActiveStep(4);
+          setOrder(prev => prev ? { ...prev, status: 'delivering' } : prev);
+        }
+        if (newStatus === 'IDLE' || newStatus === 'RETURNING') {
+          // Sau khi hoàn tất giao hàng, drone thường quay về/IDLE
+          // Chỉ đánh dấu delivered nếu đã có hasArrived hoặc ETA=0
+          if (hasArrived) {
+            setActiveStep(5);
+            setOrder(prev => prev ? { ...prev, status: 'delivered' } : prev);
+          }
+        }
+      } catch (e) {
+        console.warn('Error handling state update', e);
+      }
+    });
+    if (stateSub) subs.push(stateSub);
+
+    return () => {
+      subs.forEach(s => unsubscribe && unsubscribe(s));
+    };
+  }, [isConnected, subscribe, unsubscribe, deliveryId, hasArrived]);
+
+  // Realtime: subscribe vào topic đơn hàng để nhận trạng thái và GPS từ backend
+  useEffect(() => {
+    if (!isConnected || !subscribe || !id) return;
+    const subs: any[] = [];
+
+    const orderTopic = `/topic/orders/${id}`;
+    const orderSub = subscribe(orderTopic, (msg: any) => {
+      try {
+        const type = String(msg?.type || '').toUpperCase();
+        const payload = msg?.payload;
+
+        if (type === 'ORDER_STATUS_CHANGED') {
+          const raw = String(payload || '').toUpperCase();
+          const uiStatus: StatusKey = backendToUIStatus[raw] || 'confirmed';
+          setOrder(prev => prev ? { ...prev, status: uiStatus } : prev);
+          setActiveStep(statusToStep[uiStatus]);
+          setIsArrivingSoon(statusToStep[uiStatus] === 4);
+        }
+
+        if (type === 'GPS_UPDATE') {
+          const lat = Number(payload?.lat);
+          const lng = Number(payload?.lng);
+          const etaMinutes = Number(payload?.etaMinutes);
+          const fixed = clampToHcmRadius(normalizePair(lat, lng));
+          if (fixed) setDroneLocation(fixed);
+          else if (isValidCoord(lat, lng)) setDroneLocation({ lat, lng });
+          if (Number.isFinite(etaMinutes)) {
+            setIsArrivingSoon(etaMinutes <= 3 && etaMinutes > 0);
+            const arrived = etaMinutes <= 0;
+            setHasArrived(arrived);
+            if (arrived) {
+              setActiveStep(5);
+              setOrder(prev => prev ? { ...prev, status: 'delivered' } : prev);
+            }
+          }
+        }
+
+        if (type === 'DELIVERY_ARRIVING') {
+          setIsArrivingSoon(true);
+        }
+      } catch (e) {
+        console.warn('Error handling order topic message', e);
+      }
+    });
+    if (orderSub) subs.push(orderSub);
+
+    return () => {
+      subs.forEach(s => unsubscribe && unsubscribe(s));
+    };
+  }, [isConnected, subscribe, unsubscribe, id]);
 
   // API call to get current order status from server
   const fetchOrderFromAPI = async (orderId: string) => {
@@ -338,20 +564,77 @@ const OrderTracking: React.FC = () => {
       // Handle orderItems from API response
       const rawItems = raw.orderItems || raw.items || [];
       console.log('Raw items from API:', rawItems);
-      const items: OrderItemUI[] = Array.isArray(rawItems) ? rawItems.map((it: any) => ({
+      let items: OrderItemUI[] = Array.isArray(rawItems) ? rawItems.map((it: any) => ({
         id: it.id || it.menuItemId || 'item',
         name: it.menuItem?.name || it.name || it.nameSnapshot || 'Item',
         quantity: Number(it.quantity || 1),
         price: Number(it.unitPrice ?? it.menuItem?.price ?? it.price ?? 0),
         image: it.menuItem?.imageUrl || it.image || it.imageSnapshot,
       })) : [];
-      console.log('Processed items from API:', items);
+
+      // Fallback: nếu API không trả items/địa chỉ, lấy từ snapshot localStorage
+      try {
+        const prevStr = localStorage.getItem('currentOrder');
+        if (prevStr) {
+          const prevRaw = JSON.parse(prevStr);
+          const prevId = String(prevRaw?.id ?? prevRaw?.orderId ?? '');
+          if (prevId === String(orderId)) {
+            if (items.length === 0) {
+              const prevItemsRaw = prevRaw?.orderItems || prevRaw?.items || [];
+              if (Array.isArray(prevItemsRaw) && prevItemsRaw.length > 0) {
+                items = prevItemsRaw.map((it: any) => ({
+                  id: it.id || it.menuItemId || 'item',
+                  name: it.menuItem?.name || it.name || it.nameSnapshot || 'Item',
+                  quantity: Number(it.quantity || 1),
+                  price: Number(it.unitPrice ?? it.menuItem?.price ?? it.price ?? 0),
+                  image: it.menuItem?.imageUrl || it.image || it.imageSnapshot,
+                }));
+              }
+            }
+
+            if (address === 'N/A') {
+              let addr = 'N/A';
+              if (typeof prevRaw.address === 'string') {
+                addr = prevRaw.address;
+              } else if (prevRaw.address && typeof prevRaw.address === 'object') {
+                const a = prevRaw.address;
+                addr = [a.line1, a.ward, a.district, a.city].filter(Boolean).join(', ') || 'N/A';
+              } else if (typeof prevRaw.addressSnapshot === 'string') {
+                addr = prevRaw.addressSnapshot;
+              }
+              address = addr;
+            }
+
+            if (!storeAddress) {
+              let sAddr: string | undefined = undefined;
+              const sObj = (prevRaw.store || prevRaw.merchant || prevRaw.vendor);
+              if (sObj && typeof sObj.address === 'string') {
+                sAddr = sObj.address;
+              } else if (typeof prevRaw.storeAddress === 'string') {
+                sAddr = prevRaw.storeAddress;
+              } else if (typeof prevRaw.restaurantAddress === 'string') {
+                sAddr = prevRaw.restaurantAddress;
+              } else if (sObj && sObj.address && typeof sObj.address === 'object') {
+                const sa = sObj.address;
+                const joined = [sa.line1, sa.ward, sa.district, sa.city].filter(Boolean).join(', ');
+                if (joined) sAddr = joined;
+              }
+              storeAddress = sAddr;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('localStorage fallback parse failed:', e);
+      }
+      console.log('Processed items after fallback:', items);
       
       const ui: OrderUI = {
         id: raw.id || orderId,
         status: uiStatus,
         items,
-        total: Number(raw.totalAmount ?? raw.total ?? 0),
+        total: (items && items.length > 0)
+          ? items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0)
+          : Number(raw.totalAmount ?? raw.total ?? 0),
         deliveryFee: 0,
         address,
         storeAddress,
@@ -376,9 +659,15 @@ const OrderTracking: React.FC = () => {
         const trackRes = await api.get(`/deliveries/${trackTargetId}/track`);
         const t = trackRes.data || {};
         const deliveryStatusRaw = (t.deliveryStatus || '').toString().toUpperCase();
-        // Nếu backend báo delivery đang tiến hành thì force step 'delivering'
-        if (['ASSIGNED','IN_PROGRESS','OUT_FOR_DELIVERY'].includes(deliveryStatusRaw)) {
+        // Chỉ điều chỉnh step từ tracking nếu đơn chưa ở trạng thái cuối (delivered)
+        // và trạng thái tracking không phải là DELIVERED
+        const trackedUiStatus: StatusKey = backendToUIStatus[deliveryStatusRaw] || 'confirmed';
+        if (trackedUiStatus === 'delivered') {
+          setActiveStep(statusToStep['delivered']);
+        } else if (uiStatus !== 'delivered' && ['ASSIGNED','IN_PROGRESS','OUT_FOR_DELIVERY','DELIVERING'].includes(deliveryStatusRaw)) {
           setActiveStep(statusToStep['delivering']);
+          // Đồng bộ trạng thái đơn sang delivering nếu tracking báo đang giao
+          setOrder(prev => prev ? { ...prev, status: 'delivering' } : prev);
         }
 
         // Update ETA if available
@@ -430,11 +719,8 @@ const OrderTracking: React.FC = () => {
 
         if (clampedDest) setCustomerLocation({ lat: clampedDest.lat, lng: clampedDest.lng });
         if (clampedCur) {
-          // Nếu đang DELIVERING mà current trùng đích (hoặc rất gần), lùi nhẹ để TrackingMap mô phỏng tiến dần
-          const distKm = kmDistance(clampedCur, clampedDest);
-          const shouldBackoff = uiStatus === 'delivering' && clampedDest && distKm <= 0.02; // ~20m
-          const adjusted = shouldBackoff ? backoffFromDest(clampedDest!) : clampedCur;
-          setDroneLocation({ lat: adjusted.lat, lng: adjusted.lng });
+          // Hiển thị đúng tọa độ thực: không lùi điểm để mô phỏng
+          setDroneLocation({ lat: clampedCur.lat, lng: clampedCur.lng });
         }
         // Fallback: nếu track thiếu toạ độ, thử /deliveries/{deliveryId}/detail
         const coordsMissing = !curPair || !isValidCoord(curPair.lat, curPair.lng) || !destPair || !isValidCoord(destPair.lat, destPair.lng);
@@ -462,16 +748,8 @@ const OrderTracking: React.FC = () => {
               const c2 = clampToHcmRadius(p2);
               if (c2 && isValidCoord(c2.lat, c2.lng)) {
                 setCustomerLocation({ lat: c2.lat, lng: c2.lng });
-                // Nếu current quá gần W2 và còn đang giao, lùi nhẹ để mô phỏng
                 if (detailCur) {
-                  const distKm = kmDistance(detailCur, { lat: c2.lat, lng: c2.lng });
-                  const shouldBackoff = uiStatus === 'delivering' && distKm <= 0.02;
-                  const adjusted = shouldBackoff ? backoffFromDest({ lat: c2.lat, lng: c2.lng }) : detailCur;
-                  setDroneLocation({ lat: adjusted.lat, lng: adjusted.lng });
-                } else if (uiStatus === 'delivering') {
-                  // Không có current rõ ràng mà còn đang giao: đặt gần W2 để TrackingMap tiến dần
-                  const adjusted = backoffFromDest({ lat: c2.lat, lng: c2.lng });
-                  setDroneLocation({ lat: adjusted.lat, lng: adjusted.lng });
+                  setDroneLocation({ lat: detailCur.lat, lng: detailCur.lng });
                 }
               }
             }
@@ -513,7 +791,9 @@ const OrderTracking: React.FC = () => {
     let timer: any = null;
     const tick = async () => {
       try {
-        const trackRes = await api.get(`/deliveries/${id}/track`);
+        // Ưu tiên dùng deliveryId nếu có, fallback sang order id
+        const targetTrackId = Number.isFinite(Number(deliveryId)) ? String(deliveryId) : String(id);
+        const trackRes = await api.get(`/deliveries/${targetTrackId}/track`);
         const t = trackRes.data || {};
         const eta = Number(t.estimatedMinutesRemaining);
         if (!Number.isNaN(eta) && eta >= 0) {
@@ -659,39 +939,26 @@ const OrderTracking: React.FC = () => {
     loadOrder();
   }, [id, userId]);
 
-  // Subscribe to real-time order status updates via WebSocket
+  // Khoá nút xác nhận 3s kể từ khi đơn chuyển sang đang giao
   useEffect(() => {
-    if (!id || !isConnected) return;
+    const isDelivering = activeStep === 4 || (order && order.status === 'delivering');
+    if (!isDelivering) {
+      setCanConfirm(false);
+      return;
+    }
+    setCanConfirm(false);
+    const timer = setTimeout(() => setCanConfirm(true), 3000);
+    return () => clearTimeout(timer);
+  }, [activeStep, order?.status]);
 
-    console.log('Subscribing to WebSocket updates for order:', id);
-    const sub = subscribe(`/topic/orders/${id}`, (message: any) => {
-      try {
-        console.log('Received WebSocket message:', message);
-        const type = message?.type ?? null;
-        const payload = message?.payload ?? message;
-
-        if (type === 'ORDER_STATUS_CHANGED' || typeof payload === 'string') {
-          const statusRaw = (typeof payload === 'string' ? payload : String(payload)).toUpperCase();
-          const uiStatus: StatusKey = backendToUIStatus[statusRaw] || 'confirmed';
-          console.log('Status updated via WebSocket:', statusRaw, '->', uiStatus);
-          
-          setOrder((prev) => prev ? { ...prev, status: uiStatus } : prev);
-          setActiveStep(statusToStep[uiStatus]);
-          setIsArrivingSoon(statusToStep[uiStatus] === 4);
-          
-        } else if (type === 'DELIVERY_ARRIVING') {
-          console.log('Delivery arriving notification received');
-          setIsArrivingSoon(true);
-        }
-      } catch (e) {
-        console.warn('Failed to process WS message:', e);
-      }
-    });
-
-    return () => {
-      unsubscribe(sub);
-    };
-  }, [id, isConnected, subscribe, unsubscribe]);
+  // Nếu đơn ở trạng thái sẵn sàng giao (ready), tự động chuyển UI sang đang giao để mô phỏng
+  useEffect(() => {
+    if (!order) return;
+    if (order.status === 'ready') {
+      setOrder(prev => prev ? { ...prev, status: 'delivering' } : prev);
+      setActiveStep(statusToStep['delivering']);
+    }
+  }, [order]);
 
   const ErrorAlert = styled(Alert)`
     margin: 16px 0;
@@ -734,7 +1001,7 @@ const OrderTracking: React.FC = () => {
           }}
         >
           <Box sx={{ height: 400, borderRadius: 2, overflow: 'hidden', mb: 2, boxShadow: 2 }}>
-            <TrackingMap height={400} orderId={id ? String(id) : undefined} />
+            <TrackingMap height={400} orderId={id ? String(id) : undefined} simulate={false} />
           </Box>
           <ErrorAlert severity="warning">
             <AlertTitle>Lỗi tải dữ liệu</AlertTitle>
@@ -777,7 +1044,7 @@ const OrderTracking: React.FC = () => {
           }}
         >
           <Box sx={{ height: 400, borderRadius: 2, overflow: 'hidden', mb: 2, boxShadow: 2 }}>
-            <TrackingMap height={400} orderId={id ? String(id) : undefined} />
+            <TrackingMap height={400} orderId={id ? String(id) : undefined} simulate={false} />
           </Box>
           <Alert severity="info">
             <AlertTitle>Đang tải dữ liệu đơn hàng</AlertTitle>
@@ -873,44 +1140,38 @@ const OrderTracking: React.FC = () => {
                     orderId={String(order.id)}
                     droneLocation={droneLocation || undefined}
                     customerLocation={customerLocation || undefined}
-                    onArrived={() => {
+                    simulate={order.status === 'delivering'}
+                    autoArrivalSeconds={10}
+                    onArrived={async () => {
                       setHasArrived(true);
                       setIsArrivingSoon(false);
+                      await confirmDelivery(true);
                     }}
+                    onArrivingSoon={() => setIsArrivingSoon(true)}
                   />
                 </Box>
-                {hasArrived && activeStep === 4 && (
+                {activeStep === 4 && (
                   <Alert severity="info" sx={{ mb: 2 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Box>
-                        <AlertTitle>Drone đã tới điểm giao (W2)</AlertTitle>
+                        <AlertTitle>{hasArrived ? 'Drone đã tới điểm giao (W2)' : 'Đơn hàng đang giao'}</AlertTitle>
                         Vui lòng xác nhận đã nhận hàng để hoàn tất đơn.
                       </Box>
-                      <Button 
-                        variant="contained" 
-                        color="success" 
-                        disabled={confirming}
-                        onClick={async () => {
-                          if (!order) return;
-                          setConfirming(true);
-                          setConfirmError(null);
-                          try {
-                            if (deliveryId && Number.isFinite(Number(deliveryId))) {
-                              await completeDeliveryByDeliveryId(Number(deliveryId));
-                            } else {
-                              // Fallback nếu không có deliveryId: thử theo orderId (có thể fail nếu backend không hỗ trợ)
-                              await completeDelivery(Number(order.id));
-                            }
-                            setActiveStep(5);
-                          } catch (e: any) {
-                            setConfirmError(e?.response?.data?.message || 'Xác nhận thất bại, vui lòng thử lại');
-                          } finally {
-                            setConfirming(false);
-                          }
-                        }}
-                      >
-                        Tôi xác nhận đã nhận hàng
-                      </Button>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Button 
+                          variant="contained" 
+                          color="success" 
+                          disabled={confirming || !canConfirm}
+                          onClick={() => confirmDelivery(false)}
+                        >
+                          Tôi xác nhận đã nhận hàng
+                        </Button>
+                        {!canConfirm && (
+                          <Typography variant="caption" color="text.secondary">
+                            Vui lòng đợi 3 giây trước khi xác nhận
+                          </Typography>
+                        )}
+                      </Box>
                     </Box>
                     {confirmError && (
                       <Typography variant="caption" color="error">{confirmError}</Typography>

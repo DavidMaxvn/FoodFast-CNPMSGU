@@ -12,7 +12,7 @@ import java.util.Map;
 public class DroneConfig {
     
     // GPS tick interval in seconds
-    private int gpsTickSec = 3;
+    private int gpsTickSec = 5;
     
     // Dwell time at customer location in seconds
     private int dwellSecCustomer = 10;

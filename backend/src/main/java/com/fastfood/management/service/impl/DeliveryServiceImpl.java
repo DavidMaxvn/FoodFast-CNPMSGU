@@ -11,6 +11,7 @@ import com.fastfood.management.repository.DeliveryRepository;
 import com.fastfood.management.repository.OrderRepository;
 import com.fastfood.management.repository.DroneRepository;
 import com.fastfood.management.service.api.DeliveryService;
+import com.fastfood.management.service.api.FleetService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +31,7 @@ public class DeliveryServiceImpl implements DeliveryService {
     private final OrderRepository orderRepository;
     private final DroneRepository droneRepository;
     private final WebSocketService webSocketService;
+    private final FleetService fleetService;
 
     // Hàm tiện ích: chuyển từ entity Delivery sang DTO DeliveryResponse (đơn giản hoá)
     private DeliveryResponse toResponse(Delivery delivery) {
@@ -138,6 +140,12 @@ public class DeliveryServiceImpl implements DeliveryService {
     public DeliveryResponse completeDelivery(Long deliveryId) {
         Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy delivery với id: " + deliveryId));
+
+        // Chỉ cho phép hoàn tất khi order đang ở trạng thái OUT_FOR_DELIVERY
+        Order order = delivery.getOrder();
+        if (order != null && order.getStatus() != Order.OrderStatus.OUT_FOR_DELIVERY) {
+            throw new IllegalStateException("Order phải ở trạng thái OUT_FOR_DELIVERY trước khi hoàn tất");
+        }
         delivery.setStatus(Delivery.DeliveryStatus.COMPLETED);
         DeliveryEvent doneEvent = DeliveryEvent.builder()
                 .delivery(delivery)
@@ -146,6 +154,24 @@ public class DeliveryServiceImpl implements DeliveryService {
                 .build();
         delivery.getEvents().add(doneEvent);
         deliveryRepository.save(delivery);
+
+        // Cập nhật trạng thái đơn hàng sang DELIVERED nếu có
+        if (order != null) {
+            order.setStatus(Order.OrderStatus.DELIVERED);
+            order.setUpdatedAt(LocalDateTime.now());
+            orderRepository.save(order);
+        }
+
+        // Đưa drone về trạng thái IDLE qua FleetService (và broadcast state change)
+        Drone drone = delivery.getDrone();
+        if (drone != null) {
+            try {
+                fleetService.getCurrentAssignment(drone.getId())
+                        .ifPresent(a -> fleetService.completeAssignment(a.getId()));
+            } catch (Exception ex) {
+                // Không chặn hoàn tất nếu không có assignment hiện tại
+            }
+        }
         return toResponse(delivery);
     }
 

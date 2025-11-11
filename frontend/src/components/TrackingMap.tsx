@@ -39,6 +39,9 @@ interface TrackingMapProps {
   droneLocation?: LocationPoint;
   height?: number;
   onArrived?: () => void; // gọi khi drone tới W2
+  simulate?: boolean; // bật mô phỏng chuyển động (mặc định tắt)
+  autoArrivalSeconds?: number; // thời gian mô phỏng từ W0 tới W2
+  onArrivingSoon?: () => void; // gọi khi sắp tới đích
 }
 
 // OSRM API service
@@ -74,7 +77,10 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
   customerLocation,
   droneLocation,
   height = 400,
-  onArrived
+  onArrived,
+  simulate = false,
+  autoArrivalSeconds = 10,
+  onArrivingSoon,
 }) => {
   const [routeCoordinates, setRouteCoordinates] = useState<LocationPoint[]>([]);
   const [loading, setLoading] = useState(false);
@@ -140,7 +146,8 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
   const [routeDistance, setRouteDistance] = useState<number>(0);
   const [hasArrived, setHasArrived] = useState<boolean>(false);
   const notifiedArrivedRef = useRef<boolean>(false);
-  const [isMoving, setIsMoving] = useState<boolean>(false);
+  const [isMoving, setIsMoving] = useState<boolean>(simulate);
+  const arrivalSoonNotifiedRef = useRef<boolean>(false);
 
   // Simulate drone movement for demo
   const [currentDroneLocation, setCurrentDroneLocation] = useState<LocationPoint>(defaultDrone);
@@ -161,25 +168,45 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
   }), []);
 
   useEffect(() => {
-    // Nếu bật mô phỏng, luôn chạy mô phỏng bất kể có tọa độ thật hay không
+    // Nếu bật mô phỏng, chạy mô phỏng tuyến tính theo thời gian autoArrivalSeconds
     if (isMoving && !hasArrived) {
+      const start = isValidPoint(defaultDrone) ? defaultDrone : { lat: 10.8331, lng: 106.6197 };
+      const end = isValidPoint(targetLocation) ? targetLocation : { lat: 10.8231, lng: 106.6297 };
+      const startTime = Date.now();
+      const durationMs = Math.max(1000, (autoArrivalSeconds || 10) * 1000);
+      const endTime = startTime + durationMs;
+
+      arrivalSoonNotifiedRef.current = false;
+
       const interval = setInterval(() => {
         if (!isMounted) return;
-        setCurrentDroneLocation(prev => {
-          const distanceKm = calculateDistance(prev, targetLocation);
-          // Nếu gần tới đích (~20m) thì dừng dịch chuyển và tắt isMoving
-          if (distanceKm <= 0.02) {
-            setIsMoving(false);
-            return prev;
+        const now = Date.now();
+        const fracRaw = (now - startTime) / (endTime - startTime);
+        const frac = Math.max(0, Math.min(1, fracRaw));
+        const next = {
+          lat: start.lat + (end.lat - start.lat) * frac,
+          lng: start.lng + (end.lng - start.lng) * frac,
+        };
+        setCurrentDroneLocation(next);
+
+        // Gần đến: khi còn <= 15% thời gian hoặc cách < 100m
+        const remainingFrac = 1 - frac;
+        const distKm = calculateDistance(next, end);
+        if (!arrivalSoonNotifiedRef.current && (remainingFrac <= 0.15 || distKm <= 0.1)) {
+          arrivalSoonNotifiedRef.current = true;
+          try { onArrivingSoon && onArrivingSoon(); } catch {}
+        }
+
+        if (frac >= 1) {
+          clearInterval(interval);
+          setIsMoving(false);
+          setHasArrived(true);
+          if (!notifiedArrivedRef.current) {
+            notifiedArrivedRef.current = true;
+            try { onArrived && onArrived(); } catch {}
           }
-          const stepKm = 0.05; // ~50m mỗi lần cập nhật
-          const frac = Math.min(1, stepKm / Math.max(distanceKm, 1e-6));
-          return {
-            lat: prev.lat + (targetLocation.lat - prev.lat) * frac,
-            lng: prev.lng + (targetLocation.lng - prev.lng) * frac,
-          };
-        });
-      }, 3000);
+        }
+      }, 200);
 
       return () => {
         clearInterval(interval);
@@ -195,15 +222,16 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
       // Tọa độ prop không hợp lệ: đặt về điểm demo
       setCurrentDroneLocation(defaultDrone);
     }
-  }, [isMounted, droneLocation, targetLocation, isMoving, hasArrived]);
+  }, [isMounted, droneLocation, targetLocation, isMoving, hasArrived, autoArrivalSeconds, defaultDrone]);
 
-  // Tự động bắt đầu di chuyển khi cả hai điểm hợp lệ (giảm thao tác)
+  // Chỉ tự động bắt đầu di chuyển khi bật simulate
   useEffect(() => {
+    if (!simulate) return;
     const ready = isValidPoint(currentDroneLocation) && isValidPoint(targetLocation);
     if (!isMoving && ready && !hasArrived) {
       setIsMoving(true);
     }
-  }, [currentDroneLocation, targetLocation, isMoving, hasArrived]);
+  }, [currentDroneLocation, targetLocation, isMoving, hasArrived, simulate]);
 
   // Tự động bật theo dõi khi bắt đầu di chuyển để camera bám drone
   useEffect(() => {
@@ -391,6 +419,7 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
         >
           {followDrone ? 'Đang theo dõi Drone' : 'Theo dõi Drone'}
         </Button>
+        {simulate && (
         <Button 
           size="small"
           sx={{ ml: 1 }}
@@ -400,6 +429,7 @@ const TrackingMap: React.FC<TrackingMapProps> = ({
         >
           {isMoving ? 'Tạm dừng di chuyển' : 'Bắt đầu di chuyển'}
         </Button>
+        )}
       </Box>
 
       {error && (

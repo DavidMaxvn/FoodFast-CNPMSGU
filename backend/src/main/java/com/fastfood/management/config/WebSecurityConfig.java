@@ -46,12 +46,25 @@ public class WebSecurityConfig {
         .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
         // File upload endpoints
         .requestMatchers(HttpMethod.POST, "/files/**").permitAll()
-        // Public menu browsing endpoints
+        // Public menu browsing endpoints (support context-path /api)
         .requestMatchers(HttpMethod.GET, "/menu/**").permitAll()
-        // Admin menu management endpoints (temporarily allow for testing)
+        .requestMatchers(HttpMethod.GET, "/api/menu/**").permitAll()
+        // Admin/merchant menu management endpoints (temporarily allow for testing)
         .requestMatchers(HttpMethod.POST, "/menu/**").permitAll()
+        .requestMatchers(HttpMethod.POST, "/api/menu/**").permitAll()
         .requestMatchers(HttpMethod.PUT, "/menu/**").permitAll()
+        .requestMatchers(HttpMethod.PUT, "/api/menu/**").permitAll()
         .requestMatchers(HttpMethod.DELETE, "/menu/**").permitAll()
+        .requestMatchers(HttpMethod.DELETE, "/api/menu/**").permitAll()
+        // Staff management endpoints for merchant portal (temporarily allow to avoid 403 during development)
+        .requestMatchers(HttpMethod.GET, "/staff/**").permitAll()
+        .requestMatchers(HttpMethod.POST, "/staff/**").permitAll()
+        .requestMatchers(HttpMethod.PUT, "/staff/**").permitAll()
+        .requestMatchers(HttpMethod.PATCH, "/staff/**").permitAll()
+        .requestMatchers(HttpMethod.GET, "/api/staff/**").permitAll()
+        .requestMatchers(HttpMethod.POST, "/api/staff/**").permitAll()
+        .requestMatchers(HttpMethod.PUT, "/api/staff/**").permitAll()
+        .requestMatchers(HttpMethod.PATCH, "/api/staff/**").permitAll()
         .requestMatchers(HttpMethod.GET, "/public/**").permitAll()
         // Public products browsing endpoints
         .requestMatchers(HttpMethod.GET, "/products").permitAll()
@@ -73,12 +86,27 @@ public class WebSecurityConfig {
         .requestMatchers(HttpMethod.GET, "/deliveries/**").permitAll()
         .requestMatchers(HttpMethod.POST, "/deliveries/**").permitAll()
         .requestMatchers(HttpMethod.PUT, "/deliveries/**").permitAll()
+        // Merchant orders listing/statistics: allow GET to avoid 403 during development
+        .requestMatchers(HttpMethod.GET, "/orders/status").permitAll()
+        .requestMatchers(HttpMethod.GET, "/api/orders/status").permitAll()
+        .requestMatchers(HttpMethod.GET, "/orders/stats").permitAll()
+        .requestMatchers(HttpMethod.GET, "/api/orders/stats").permitAll()
         // Cho phép VNPay tạo payment và trả về (callback) không cần JWT
         .requestMatchers(HttpMethod.POST, "/payments/vnpay/**").permitAll()
         .requestMatchers(HttpMethod.GET, "/payments/vnpay/return").permitAll()
         // Cho phép WebSocket endpoints
         .requestMatchers("/ws/**").permitAll()
         .requestMatchers("/api/ws/**").permitAll()
+
+        // Allow Swagger/OpenAPI UI and JSON (support both with and without context-path)
+        .requestMatchers("/v3/api-docs/**").permitAll()
+        .requestMatchers("/swagger-ui/**").permitAll()
+        .requestMatchers("/swagger-ui.html").permitAll()
+        .requestMatchers("/swagger-ui/index.html").permitAll()
+        .requestMatchers("/swagger-resources/**").permitAll()
+        .requestMatchers("/api/v3/api-docs/**").permitAll()
+        .requestMatchers("/api/swagger-ui/**").permitAll()
+
         .anyRequest().authenticated();
 
     // Thêm JWT filter trước UsernamePasswordAuthenticationFilter
@@ -99,6 +127,7 @@ public class WebSecurityConfig {
     // Allow specific origins instead of wildcard to support credentials
     configuration.setAllowedOrigins(Arrays.asList(
       "http://localhost:3000",
+      "http://localhost:3001",
       "http://localhost:8080",
       "https://*.replit.dev"
     ));

@@ -9,4 +9,6 @@ import java.util.List;
 @Repository
 public interface StoreStaffRepository extends JpaRepository<StoreStaff, Long> {
     List<StoreStaff> findByUserIdAndStatus(Long userId, StoreStaff.StaffStatus status);
+    List<StoreStaff> findByStoreId(Long storeId);
+    List<StoreStaff> findByStoreIdAndStatus(Long storeId, StoreStaff.StaffStatus status);
 }

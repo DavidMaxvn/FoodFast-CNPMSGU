@@ -494,7 +494,6 @@ const Checkout: React.FC = () => {
                 onChange={handlePaymentMethodChange}
               >
                 <FormControlLabel value="vnpay" control={<Radio />} label="VNPay" />
-                <FormControlLabel value="cod" control={<Radio />} label="Cash on Delivery" />
               </RadioGroup>
             </FormControl>
           </Box>

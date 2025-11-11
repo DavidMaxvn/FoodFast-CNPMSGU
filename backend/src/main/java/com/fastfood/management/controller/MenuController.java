@@ -31,8 +31,19 @@ public class MenuController {
     @GetMapping("/items")
     public ResponseEntity<List<MenuItem>> getAvailableItems(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        Page<MenuItem> result = menuItemRepository.findByAvailableTrue(PageRequest.of(page, size));
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) Long storeId) {
+        Page<MenuItem> result;
+        if (storeId != null) {
+            Optional<Store> store = storeRepository.findById(storeId);
+            if (store.isPresent()) {
+                result = menuItemRepository.findByStoreAndAvailableTrue(store.get(), PageRequest.of(page, size));
+            } else {
+                result = Page.empty();
+            }
+        } else {
+            result = menuItemRepository.findByAvailableTrue(PageRequest.of(page, size));
+        }
         return ResponseEntity.ok(result.getContent());
     }
 
@@ -58,8 +69,19 @@ public class MenuController {
     public ResponseEntity<List<MenuItem>> searchByName(
             @RequestParam String name,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        Page<MenuItem> result = menuItemRepository.findByNameContainingAndAvailableTrue(name, PageRequest.of(page, size));
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) Long storeId) {
+        Page<MenuItem> result;
+        if (storeId != null) {
+            Optional<Store> store = storeRepository.findById(storeId);
+            if (store.isPresent()) {
+                result = menuItemRepository.findByStoreAndNameContainingAndAvailableTrue(store.get(), name, PageRequest.of(page, size));
+            } else {
+                result = Page.empty();
+            }
+        } else {
+            result = menuItemRepository.findByNameContainingAndAvailableTrue(name, PageRequest.of(page, size));
+        }
         return ResponseEntity.ok(result.getContent());
     }
 
@@ -135,9 +157,84 @@ public class MenuController {
 
     // API để lấy danh sách categories
     @GetMapping("/categories")
-    public ResponseEntity<List<Category>> getAllCategories() {
+    public ResponseEntity<List<Category>> getAllCategories(@RequestParam(required = false) Long storeId) {
         List<Category> categories = categoryRepository.findAll();
+        if (storeId != null) {
+            categories = categories.stream()
+                    .filter(c -> c.getStore() != null && storeId.equals(c.getStore().getId()))
+                    .toList();
+        }
         return ResponseEntity.ok(categories);
+    }
+
+    // Tạo category mới (merchant/admin)
+    @PostMapping("/categories")
+    public ResponseEntity<?> createCategory(@RequestBody Category req) {
+        try {
+            if (req.getName() == null || req.getName().trim().isEmpty()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(Map.of("message", "Tên danh mục không được trống"));
+            }
+            Category cat = new Category();
+            cat.setName(req.getName().trim());
+            // Liên kết store nếu có
+            if (req.getStore() != null && req.getStore().getId() != null) {
+                Optional<Store> st = storeRepository.findById(req.getStore().getId());
+                st.ifPresent(cat::setStore);
+            }
+            cat.setSortOrder(req.getSortOrder());
+            Category saved = categoryRepository.save(cat);
+            return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "Không thể tạo danh mục: " + e.getMessage()));
+        }
+    }
+
+    // Cập nhật category
+    @PutMapping("/categories/{id}")
+    public ResponseEntity<?> updateCategory(@PathVariable Long id, @RequestBody Category req) {
+        Optional<Category> existing = categoryRepository.findById(id);
+        if (existing.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("message", "Không tìm thấy danh mục"));
+        }
+        try {
+            Category cat = existing.get();
+            if (req.getName() != null && !req.getName().trim().isEmpty()) {
+                cat.setName(req.getName().trim());
+            }
+            if (req.getSortOrder() != null) {
+                cat.setSortOrder(req.getSortOrder());
+            }
+            // Cho phép đổi store nếu cần (ít dùng)
+            if (req.getStore() != null && req.getStore().getId() != null) {
+                Optional<Store> st = storeRepository.findById(req.getStore().getId());
+                st.ifPresent(cat::setStore);
+            }
+            Category updated = categoryRepository.save(cat);
+            return ResponseEntity.ok(updated);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "Không thể cập nhật danh mục: " + e.getMessage()));
+        }
+    }
+
+    // Xóa category
+    @DeleteMapping("/categories/{id}")
+    public ResponseEntity<?> deleteCategory(@PathVariable Long id) {
+        Optional<Category> existing = categoryRepository.findById(id);
+        if (existing.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("message", "Không tìm thấy danh mục"));
+        }
+        try {
+            categoryRepository.deleteById(id);
+            return ResponseEntity.ok(Map.of("message", "Đã xóa danh mục thành công"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "Không thể xóa danh mục: " + e.getMessage()));
+        }
     }
 
     // API để lấy danh sách stores
@@ -145,5 +242,16 @@ public class MenuController {
     public ResponseEntity<List<Store>> getAllStores() {
         List<Store> stores = storeRepository.findAll();
         return ResponseEntity.ok(stores);
+    }
+
+    // Lấy chi tiết menu item theo id
+    @GetMapping("/items/{id}")
+    public ResponseEntity<?> getMenuItemById(@PathVariable Long id) {
+        Optional<MenuItem> item = menuItemRepository.findById(id);
+        if (item.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("message", "Không tìm thấy menu item"));
+        }
+        return ResponseEntity.ok(item.get());
     }
 }

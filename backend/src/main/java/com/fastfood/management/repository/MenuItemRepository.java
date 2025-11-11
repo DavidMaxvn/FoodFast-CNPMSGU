@@ -18,4 +18,5 @@ public interface MenuItemRepository extends JpaRepository<MenuItem, Long> {
     Page<MenuItem> findByNameContainingAndAvailableTrue(String name, Pageable pageable);
     boolean existsByName(String name);
     Page<MenuItem> findByStoreAndAvailableTrue(Store store, Pageable pageable);
+    Page<MenuItem> findByStoreAndNameContainingAndAvailableTrue(Store store, String name, Pageable pageable);
 }

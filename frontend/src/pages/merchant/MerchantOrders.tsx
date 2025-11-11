@@ -41,12 +41,13 @@ const statusConfig: Record<OrderStatus, { label: string; color: 'default' | 'inf
   CANCELLED: { label: 'Đã hủy', color: 'error', icon: <Cancel /> },
 };
 
+// Merchant/Staff chỉ được cập nhật tới "Sẵn sàng giao" (READY)
 const nextStatusMap: Partial<Record<OrderStatus, OrderStatus>> = {
   CREATED: 'CONFIRMED',
   CONFIRMED: 'PREPARING',
   PREPARING: 'READY',
-  READY: 'DELIVERING',
-  DELIVERING: 'COMPLETED',
+  // READY: 'DELIVERING', // Bị chặn theo yêu cầu
+  // DELIVERING: 'COMPLETED', // Bị chặn theo yêu cầu
 };
 
 // Map UI status <-> backend status
@@ -118,17 +119,49 @@ const MerchantOrders: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTab]);
 
+  const isFiltering = useMemo(() => {
+    const hasSearch = Boolean(searchTerm && searchTerm.trim());
+    const hasDate = Boolean(filterStartDate) || Boolean(filterEndDate);
+    return hasSearch || hasDate;
+  }, [searchTerm, filterStartDate, filterEndDate]);
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await getOrdersByStatus(
-        uiToBackendStatus[currentStatus],
-        page,
-        size,
-        searchTerm?.trim() || undefined,
-        currentStore ? Number(currentStore.id) : undefined
-      );
-      setData(res);
+      const queryPage = isFiltering ? 0 : page;
+      const querySize = isFiltering ? 1000 : size;
+      const storeIdNum = currentStore ? Number(currentStore.id) : undefined;
+      const backendStatus = uiToBackendStatus[currentStatus];
+      if (currentStatus === 'READY') {
+        // Gộp cả READY_FOR_DELIVERY và ASSIGNED vào tab "Sẵn sàng giao"
+        const [resReady, resAssigned] = await Promise.all([
+          getOrdersByStatus('READY_FOR_DELIVERY', queryPage, querySize, searchTerm?.trim() || undefined, storeIdNum),
+          getOrdersByStatus('ASSIGNED', queryPage, querySize, searchTerm?.trim() || undefined, storeIdNum),
+        ]);
+
+        const byId: Record<number, OrderResponse> = {};
+        for (const o of (resReady.content || [])) byId[o.id] = o;
+        for (const o of (resAssigned.content || [])) byId[o.id] = o;
+        const combined = Object.values(byId);
+        const totalElements = (resReady.totalElements || 0) + (resAssigned.totalElements || 0);
+        const merged: Page<OrderResponse> = {
+          content: combined,
+          number: 0,
+          size: combined.length,
+          totalElements,
+          totalPages: Math.max(1, Math.ceil(totalElements / size)),
+        };
+        setData(merged);
+      } else {
+        const res = await getOrdersByStatus(
+          backendStatus,
+          queryPage,
+          querySize,
+          searchTerm?.trim() || undefined,
+          storeIdNum
+        );
+        setData(res);
+      }
     } catch (e) {
       // noop
     } finally {
@@ -136,7 +169,7 @@ const MerchantOrders: React.FC = () => {
     }
   };
 
-  useEffect(() => { fetchData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [currentStatus, page, size, searchTerm]);
+  useEffect(() => { fetchData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [currentStatus, page, size, searchTerm, isFiltering, currentStore]);
 
   const openDetails = async (o: OrderResponse) => { 
     setSelectedOrder(o); 
@@ -163,13 +196,14 @@ const MerchantOrders: React.FC = () => {
 
   // Tính trạng thái backend tiếp theo dựa trên trạng thái backend hiện tại
   const computeNextBackendStatus = (backendStatus: string): string | null => {
+    // Merchant/Staff: chỉ chuyển tới READY_FOR_DELIVERY, không tiến xa hơn
     switch (backendStatus) {
       case 'CREATED': return 'CONFIRMED';
       case 'CONFIRMED': return 'PREPARING';
       case 'PREPARING': return 'READY_FOR_DELIVERY';
-      case 'READY_FOR_DELIVERY': return 'OUT_FOR_DELIVERY';
-      case 'ASSIGNED': return 'OUT_FOR_DELIVERY';
-      case 'OUT_FOR_DELIVERY': return 'DELIVERED';
+      // Bị chặn: READY_FOR_DELIVERY -> OUT_FOR_DELIVERY
+      // Bị chặn: ASSIGNED -> OUT_FOR_DELIVERY
+      // Bị chặn: OUT_FOR_DELIVERY -> DELIVERED
       default: return null;
     }
   };
@@ -180,24 +214,8 @@ const MerchantOrders: React.FC = () => {
     try {
       await updateOrderStatus(o.id, target);
 
-      // Nếu chuyển sang READY_FOR_DELIVERY, gọi auto-assign drone để phản hồi tức thì trên UI
-      if (target === 'READY_FOR_DELIVERY') {
-        try {
-          const result = await assignDroneToOrder(o.id);
-          if (result?.droneId) {
-            setSuccessMessage(`Đơn #${o.id} đã sẵn sàng và gán drone #${result.droneId}`);
-          } else {
-            const uiKey = backendToUIStatus[target];
-            setSuccessMessage(`Đơn #${o.id} đã chuyển sang "${statusConfig[uiKey].label}". Không có drone rảnh, sẽ gán sau.`);
-          }
-        } catch (err: any) {
-          const uiKey = backendToUIStatus[target];
-          setSuccessMessage(`Đơn #${o.id} đã chuyển sang "${statusConfig[uiKey].label}". Lỗi gán drone: ${err?.response?.data?.message || 'Không thể gán drone'}`);
-        }
-      } else {
-        const uiKey = backendToUIStatus[target];
-        setSuccessMessage(`Đơn #${o.id} đã chuyển sang "${statusConfig[uiKey].label}"`);
-      }
+      const uiKey = backendToUIStatus[target];
+      setSuccessMessage(`Đơn #${o.id} đã chuyển sang "${statusConfig[uiKey].label}"`);
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
       fetchData();
@@ -242,6 +260,23 @@ const MerchantOrders: React.FC = () => {
 
     return list;
   }, [data, searchTerm, filterStartDate, filterEndDate]);
+
+  const totalPagesDisplay = useMemo(() => {
+    if (isFiltering) {
+      const pages = Math.ceil((filteredContent.length || 0) / size);
+      return pages > 0 ? pages : 1;
+    }
+    return data?.totalPages || 0;
+  }, [isFiltering, filteredContent.length, size, data?.totalPages]);
+
+  const displayContent = useMemo(() => {
+    if (isFiltering) {
+      const start = page * size;
+      const end = start + size;
+      return filteredContent.slice(start, end);
+    }
+    return filteredContent;
+  }, [isFiltering, filteredContent, page, size]);
 
 
   return (
@@ -304,7 +339,7 @@ const MerchantOrders: React.FC = () => {
           </TableRow>
         </TableHead>
         <TableBody>
-          {filteredContent.map((o) => (
+          {displayContent.map((o) => (
             <TableRow key={o.id} hover>
               <TableCell>{o.orderCode || formatOrderCodeSuggestion(String(o.id))}</TableCell>
               <TableCell>
@@ -326,7 +361,7 @@ const MerchantOrders: React.FC = () => {
               </TableCell>
             </TableRow>
           ))}
-          {(filteredContent.length === 0 && !loading) && (
+          {(displayContent.length === 0 && !loading) && (
             <TableRow>
               <TableCell colSpan={5} align="center">Không có dữ liệu</TableCell>
             </TableRow>
@@ -337,12 +372,12 @@ const MerchantOrders: React.FC = () => {
 
       <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between" sx={{ mt: 2 }}>
         <Typography color="text.secondary">
-          Tổng: {data?.totalElements || 0} • Trang {page + 1}/{data?.totalPages || 0}
+          Tổng: {isFiltering ? filteredContent.length : (data?.totalElements || 0)} • Trang {page + 1}/{totalPagesDisplay}
         </Typography>
         <Stack direction="row" spacing={2} alignItems="center">
           <PaginationBar
             page={page}
-            totalPages={data?.totalPages || 0}
+            totalPages={totalPagesDisplay}
             onChange={(p) => setPage(p)}
             maxButtons={5}
           />

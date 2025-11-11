@@ -8,26 +8,19 @@ import {
   CardContent,
   CardHeader,
   Divider,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Chip,
   LinearProgress,
-  IconButton,
-  Tooltip,
   Avatar,
   List,
   ListItem,
   ListItemAvatar,
   ListItemText,
   Badge,
-  Alert,
-  AlertTitle,
   Stack,
-  Button
+  Button,
+  Select,
+  MenuItem,
+  TextField
 } from '@mui/material';
 import {
   TrendingUp,
@@ -40,13 +33,15 @@ import {
   Warning,
   CheckCircle,
   Schedule,
-  Visibility,
   Refresh,
   LocalOffer,
   Store,
   Star,
   Timeline
 } from '@mui/icons-material';
+import { ResponsiveContainer, Tooltip as RTooltip, BarChart, Bar, XAxis, YAxis, PieChart, Pie, Cell, Legend } from 'recharts';
+import { fetchStores, StoreViewModel } from '../../services/stores';
+import { getOrderStats, OrderStatsResponse } from '../../services/adminStats';
 
 // Mock data types
 interface KPIData {
@@ -58,15 +53,6 @@ interface KPIData {
   color: 'primary' | 'success' | 'warning' | 'error' | 'info';
 }
 
-interface RecentOrder {
-  id: string;
-  customerName: string;
-  items: string;
-  total: number;
-  status: 'pending' | 'preparing' | 'delivering' | 'completed';
-  time: string;
-  paymentMethod: string;
-}
 
 interface TopProduct {
   id: string;
@@ -87,11 +73,8 @@ interface ActivityItem {
   color: string;
 }
 
-interface ChartDataPoint {
-  day: string;
-  revenue: number;
-  orders: number;
-}
+// Pie colors
+const PIE_COLORS = ['#1976d2', '#2e7d32', '#ed6c02'];
 
 // Mock data for KPIs
 const kpiData: KPIData[] = [
@@ -145,54 +128,6 @@ const kpiData: KPIData[] = [
   }
 ];
 
-// Mock data for recent orders
-const recentOrders: RecentOrder[] = [
-  { 
-    id: 'ORD-2024-001', 
-    customerName: 'Nguyễn Văn A', 
-    items: '2x Burger Deluxe, 1x Fries', 
-    total: 28.50, 
-    status: 'completed',
-    time: '5 mins ago',
-    paymentMethod: 'Card'
-  },
-  { 
-    id: 'ORD-2024-002', 
-    customerName: 'Trần Thị B', 
-    items: '1x Pizza Margherita, 2x Coke', 
-    total: 45.00, 
-    status: 'delivering',
-    time: '12 mins ago',
-    paymentMethod: 'Cash'
-  },
-  { 
-    id: 'ORD-2024-003', 
-    customerName: 'Lê Văn C', 
-    items: '3x Chicken Wings, 1x Salad', 
-    total: 32.75, 
-    status: 'preparing',
-    time: '18 mins ago',
-    paymentMethod: 'E-Wallet'
-  },
-  { 
-    id: 'ORD-2024-004', 
-    customerName: 'Phạm Thị D', 
-    items: '1x Sushi Set, 2x Green Tea', 
-    total: 55.00, 
-    status: 'pending',
-    time: '23 mins ago',
-    paymentMethod: 'Card'
-  },
-  { 
-    id: 'ORD-2024-005', 
-    customerName: 'Hoàng Văn E', 
-    items: '2x Ramen Bowl, 1x Dumplings', 
-    total: 38.90, 
-    status: 'preparing',
-    time: '28 mins ago',
-    paymentMethod: 'Card'
-  }
-];
 
 // Mock data for top products
 const topProducts: TopProduct[] = [
@@ -243,16 +178,10 @@ const topProducts: TopProduct[] = [
   }
 ];
 
-// Mock data for chart (7 days)
-const chartData: ChartDataPoint[] = [
-  { day: 'Mon', revenue: 4250, orders: 145 },
-  { day: 'Tue', revenue: 5100, orders: 167 },
-  { day: 'Wed', revenue: 4800, orders: 156 },
-  { day: 'Thu', revenue: 6200, orders: 198 },
-  { day: 'Fri', revenue: 7500, orders: 234 },
-  { day: 'Sat', revenue: 8900, orders: 276 },
-  { day: 'Sun', revenue: 8537, orders: 246 }
-];
+// Date helpers
+const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
+const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
+const daysInMonth = (year: number, monthIndexZero: number) => new Date(year, monthIndexZero + 1, 0).getDate();
 
 // Mock data for recent activities
 const recentActivities: ActivityItem[] = [
@@ -281,14 +210,6 @@ const recentActivities: ActivityItem[] = [
     color: '#9c27b0'
   },
   { 
-    id: '4', 
-    type: 'alert', 
-    message: 'Low stock alert: French Fries', 
-    time: '32 mins ago',
-    icon: <Warning />,
-    color: '#ed6c02'
-  },
-  { 
     id: '5', 
     type: 'delivery', 
     message: 'Drone #DRN-003 started delivery', 
@@ -301,6 +222,21 @@ const recentActivities: ActivityItem[] = [
 const Dashboard: React.FC = () => {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(false);
+  const [stores, setStores] = useState<StoreViewModel[]>([]);
+  const [selectedStore, setSelectedStore] = useState<string>('ALL');
+  const [filterType, setFilterType] = useState<'day' | 'month'>('month');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    return `${yyyy}-${mm}`; // YYYY-MM
+  });
+  const [selectedDate, setSelectedDate] = useState<string>(() => fmtDate(new Date()));
+  const [stats, setStats] = useState<OrderStatsResponse | null>(null);
+  const [series, setSeries] = useState<Array<{ date: string; label: string; revenue: number }>>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [seriesLoading, setSeriesLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Simulate real-time updates
   useEffect(() => {
@@ -311,6 +247,86 @@ const Dashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Format VND currency
+  const formatVND = (n: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(Number(n || 0));
+
+  // Load stores for options & count
+  useEffect(() => {
+    const loadStores = async () => {
+      try {
+        const list = await fetchStores(false);
+        setStores(list);
+      } catch (e) {
+        console.warn('Load stores failed', e);
+      }
+    };
+    loadStores();
+  }, []);
+
+  const computeRange = (): { start: string; end: string } => {
+    if (filterType === 'day') {
+      const d = new Date(selectedDate);
+      return { start: fmtDate(d), end: fmtDate(endOfDay(d)) };
+    }
+    const [yyyyStr, mmStr] = selectedMonth.split('-');
+    const yyyy = Number(yyyyStr), mm = Number(mmStr);
+    const startDate = new Date(yyyy, mm - 1, 1);
+    const endDate = new Date(yyyy, mm - 1, daysInMonth(yyyy, mm - 1));
+    return { start: fmtDate(startDate), end: fmtDate(endOfDay(endDate)) };
+  };
+
+  // Load stats for selected filters
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        setStatsLoading(true);
+        setError(null);
+        const { start, end } = computeRange();
+        const res = await getOrderStats({ storeId: selectedStore !== 'ALL' ? selectedStore : undefined, start, end });
+        setStats(res);
+      } catch (e: any) {
+        console.error('Load stats failed', e);
+        setError(e?.response?.data?.message || 'Không tải được thống kê');
+      } finally {
+        setStatsLoading(false);
+      }
+    };
+    loadStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStore, filterType, selectedMonth, selectedDate]);
+
+  // Build daily revenue series for month filter
+  useEffect(() => {
+    const buildSeries = async () => {
+      if (filterType !== 'month') { setSeries([]); return; }
+      try {
+        setSeriesLoading(true);
+        setError(null);
+        const [yyyyStr, mmStr] = selectedMonth.split('-');
+        const yyyy = Number(yyyyStr), mm = Number(mmStr);
+        const totalDays = daysInMonth(yyyy, mm - 1);
+        const promises: Promise<OrderStatsResponse>[] = [];
+        const labels: string[] = [];
+        for (let day = 1; day <= totalDays; day++) {
+          const d = new Date(yyyy, mm - 1, day);
+          const start = fmtDate(d);
+          const end = fmtDate(endOfDay(d));
+          labels.push(String(day).padStart(2, '0'));
+          promises.push(getOrderStats({ storeId: selectedStore !== 'ALL' ? selectedStore : undefined, start, end }));
+        }
+        const results = await Promise.all(promises);
+        setSeries(results.map((r, idx) => ({ date: `${yyyy}-${mmStr}-${labels[idx]}`, label: labels[idx], revenue: Number(r.totalRevenue || 0) })));
+      } catch (e: any) {
+        console.error('Build series failed', e);
+        setError(e?.response?.data?.message || 'Không tải được dữ liệu biểu đồ');
+      } finally {
+        setSeriesLoading(false);
+      }
+    };
+    buildSeries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterType, selectedMonth, selectedStore]);
+
   const handleRefresh = () => {
     setLoading(true);
     setTimeout(() => {
@@ -319,38 +335,11 @@ const Dashboard: React.FC = () => {
     }, 1000);
   };
 
-  const getStatusColor = (status: string): 'default' | 'primary' | 'warning' | 'success' | 'error' => {
-    switch (status) {
-      case 'completed':
-        return 'success';
-      case 'delivering':
-        return 'primary';
-      case 'preparing':
-        return 'warning';
-      case 'pending':
-        return 'default';
-      default:
-        return 'default';
-    }
-  };
-
-  const getStatusLabel = (status: string): string => {
-    switch (status) {
-      case 'completed':
-        return 'Completed';
-      case 'delivering':
-        return 'Delivering';
-      case 'preparing':
-        return 'Preparing';
-      case 'pending':
-        return 'Pending';
-      default:
-        return status;
-    }
-  };
-
-  const maxRevenue = Math.max(...chartData.map(d => d.revenue));
-  const maxOrders = Math.max(...chartData.map(d => d.orders));
+  const storeCount = stores.length;
+  const totalRevenue = stats ? stats.totalRevenue : 0;
+  const delivered = stats ? stats.deliveredCount : 0;
+  const processing = stats ? stats.processingCount : 0;
+  const cancelled = stats ? stats.cancelledCount : 0;
 
   return (
     <Box>
@@ -358,154 +347,177 @@ const Dashboard: React.FC = () => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
           <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 600, mb: 0.5 }}>
-            Dashboard Overview
+            Thống kê tổng quan
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Last updated: {lastUpdate.toLocaleTimeString()}
           </Typography>
         </Box>
-        <Button
-          variant="outlined"
-          startIcon={loading ? <Refresh className="rotating" /> : <Refresh />}
-          onClick={handleRefresh}
-          disabled={loading}
-        >
-          Refresh
-        </Button>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Button
+            variant="outlined"
+            startIcon={loading ? <Refresh className="rotating" /> : <Refresh />}
+            onClick={handleRefresh}
+            disabled={loading}
+          >
+            Làm mới
+          </Button>
+          <Select size="small" value={filterType} onChange={(e) => setFilterType(e.target.value as any)}>
+            <MenuItem value="day">Theo ngày</MenuItem>
+            <MenuItem value="month">Theo tháng</MenuItem>
+          </Select>
+          {filterType === 'day' ? (
+            <TextField size="small" type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
+          ) : (
+            <TextField size="small" type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
+          )}
+          <Select size="small" value={selectedStore} onChange={(e) => setSelectedStore(e.target.value)} displayEmpty>
+            <MenuItem value="ALL">Tất cả cửa hàng</MenuItem>
+            {stores.map(s => (
+              <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+            ))}
+          </Select>
+        </Stack>
       </Box>
 
-      {/* System Alerts */}
-      <Stack spacing={2} sx={{ mb: 3 }}>
-        <Alert severity="warning" icon={<Warning />}>
-          <AlertTitle>Low Stock Alert</AlertTitle>
-          3 items are running low on stock. Check inventory management.
-        </Alert>
-      </Stack>
+      {/* System Alerts removed per request */}
 
       {/* KPI Cards */}
       <Grid container spacing={3} sx={{ mb: 3 }}>
-        {kpiData.map((kpi, index) => (
-          <Grid item xs={12} sm={6} md={4} lg={2} key={index}>
-            <Paper 
-              elevation={2} 
-              sx={{ 
-                height: '100%',
-                background: `linear-gradient(135deg, ${
-                  kpi.color === 'success' ? '#e8f5e9' : 
-                  kpi.color === 'warning' ? '#fff3e0' : 
-                  kpi.color === 'error' ? '#ffebee' : 
-                  kpi.color === 'info' ? '#e3f2fd' : '#f3e5f5'
-                } 0%, white 100%)`,
-                transition: 'all 0.3s',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: 4
-                }
-              }}
-            >
-              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', boxShadow: 'none' }}>
-                <CardContent sx={{ flexGrow: 1, p: 2.5 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                    <Avatar 
-                      sx={{ 
-                        bgcolor: kpi.color === 'success' ? 'success.main' : 
-                                 kpi.color === 'warning' ? 'warning.main' : 
-                                 kpi.color === 'error' ? 'error.main' : 
-                                 kpi.color === 'info' ? 'info.main' : 'primary.main',
-                        width: 48, 
-                        height: 48 
-                      }}
-                    >
-                      {kpi.icon}
-                    </Avatar>
-                    <Chip 
-                      label={kpi.change}
-                      size="small"
-                      color={kpi.trend === 'up' ? 'success' : kpi.trend === 'down' ? 'error' : 'default'}
-                      icon={kpi.trend === 'up' ? <TrendingUp fontSize="small" /> : kpi.trend === 'down' ? <TrendingDown fontSize="small" /> : undefined}
-                    />
-                  </Box>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    {kpi.title}
-                  </Typography>
-                  <Typography variant="h5" component="div" sx={{ fontWeight: 600 }}>
-                    {kpi.value}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Paper>
-          </Grid>
-        ))}
+        <Grid item xs={12} sm={6} md={3} lg={3}>
+          <Paper elevation={2}>
+            <Card sx={{ boxShadow: 'none' }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Avatar sx={{ bgcolor: 'primary.main', width: 48, height: 48 }}>
+                    <Store />
+                  </Avatar>
+                </Box>
+                <Typography variant="body2" color="text.secondary">Số cửa hàng</Typography>
+                <Typography variant="h5" sx={{ fontWeight: 600 }}>{storeCount}</Typography>
+              </CardContent>
+            </Card>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3} lg={3}>
+          <Paper elevation={2}>
+            <Card sx={{ boxShadow: 'none' }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Avatar sx={{ bgcolor: 'success.main', width: 48, height: 48 }}>
+                    <AttachMoney />
+                  </Avatar>
+                </Box>
+                <Typography variant="body2" color="text.secondary">Doanh thu ({filterType === 'day' ? 'ngày' : 'tháng'})</Typography>
+                <Typography variant="h5" sx={{ fontWeight: 600 }}>{formatVND(Number(totalRevenue))}</Typography>
+              </CardContent>
+            </Card>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3} lg={3}>
+          <Paper elevation={2}>
+            <Card sx={{ boxShadow: 'none' }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Avatar sx={{ bgcolor: 'info.main', width: 48, height: 48 }}>
+                    <ShoppingCart />
+                  </Avatar>
+                </Box>
+                <Typography variant="body2" color="text.secondary">Đơn đang xử lý</Typography>
+                <Typography variant="h5" sx={{ fontWeight: 600 }}>{processing}</Typography>
+              </CardContent>
+            </Card>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3} lg={3}>
+          <Paper elevation={2}>
+            <Card sx={{ boxShadow: 'none' }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Avatar sx={{ bgcolor: 'success.main', width: 48, height: 48 }}>
+                    <CheckCircle />
+                  </Avatar>
+                </Box>
+                <Typography variant="body2" color="text.secondary">Đơn giao thành công</Typography>
+                <Typography variant="h5" sx={{ fontWeight: 600 }}>{delivered}</Typography>
+              </CardContent>
+            </Card>
+          </Paper>
+        </Grid>
       </Grid>
       
       {/* Charts Section */}
       <Grid container spacing={3} sx={{ mb: 3 }}>
-        {/* Revenue Overview Chart */}
+        {/* Revenue / Status Chart */}
         <Grid item xs={12} lg={8}>
           <Paper sx={{ p: 3, height: '100%' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
               <Typography variant="h6" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Timeline color="primary" />
-                Revenue Overview (Last 7 Days)
+                {filterType === 'month' ? 'Doanh thu theo ngày trong tháng' : 'Phân bố trạng thái đơn theo ngày'}
               </Typography>
-              <Chip label="Weekly" color="primary" size="small" />
+              <Chip label={filterType === 'month' ? 'Tháng' : 'Ngày'} color="primary" size="small" />
             </Box>
             <Divider sx={{ mb: 3 }} />
-            
-            {/* Simple Bar Chart using CSS */}
-            <Box sx={{ height: 300 }}>
-              {chartData.map((data, index) => (
-                <Box key={index} sx={{ mb: 2 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {data.day}
-                    </Typography>
-                    <Typography variant="body2" color="primary" sx={{ fontWeight: 600 }}>
-                      ${data.revenue.toLocaleString()}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Box sx={{ flexGrow: 1 }}>
-                      <LinearProgress 
-                        variant="determinate" 
-                        value={(data.revenue / maxRevenue) * 100}
-                        sx={{ 
-                          height: 20, 
-                          borderRadius: 2,
-                          backgroundColor: 'rgba(25, 118, 210, 0.1)',
-                          '& .MuiLinearProgress-bar': {
-                            borderRadius: 2,
-                            background: 'linear-gradient(90deg, #1976d2 0%, #42a5f5 100%)'
-                          }
-                        }}
-                      />
-                    </Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ minWidth: 60, textAlign: 'right' }}>
-                      {data.orders} orders
-                    </Typography>
-                  </Box>
-                </Box>
-              ))}
-            </Box>
+
+            {filterType === 'month' ? (
+              <Box sx={{ height: 320 }}>
+                {seriesLoading && <LinearProgress sx={{ mb: 2 }} />}
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={series}>
+                    <XAxis dataKey="label" />
+                    <YAxis tickFormatter={(v) => formatVND(Number(v as any))} />
+                    <RTooltip formatter={(value: number) => formatVND(Number(value))} />
+                    <Legend />
+                    <Bar dataKey="revenue" name="Doanh thu" fill="#1976d2" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Box>
+            ) : (
+              <Box sx={{ height: 320, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {statsLoading && <LinearProgress sx={{ mb: 2, width: '100%' }} />}
+                {!statsLoading && (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={[
+                        { name: 'Đang xử lý', value: processing },
+                        { name: 'Giao thành công', value: delivered },
+                        { name: 'Đã hủy', value: cancelled },
+                      ]} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
+                        {PIE_COLORS.map((c, i) => <Cell key={i} fill={c} />)}
+                      </Pie>
+                      <Legend />
+                      <RTooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </Box>
+            )}
 
             {/* Summary Stats */}
             <Box sx={{ display: 'flex', gap: 4, mt: 3, pt: 2, borderTop: 1, borderColor: 'divider' }}>
               <Box>
-                <Typography variant="body2" color="text.secondary">Total Revenue</Typography>
+                <Typography variant="body2" color="text.secondary">Tổng doanh thu</Typography>
                 <Typography variant="h6" color="success.main" sx={{ fontWeight: 600 }}>
-                  ${chartData.reduce((sum, d) => sum + d.revenue, 0).toLocaleString()}
+                  {formatVND(Number(totalRevenue))}
                 </Typography>
               </Box>
               <Box>
-                <Typography variant="body2" color="text.secondary">Total Orders</Typography>
+                <Typography variant="body2" color="text.secondary">Đang xử lý</Typography>
                 <Typography variant="h6" color="primary.main" sx={{ fontWeight: 600 }}>
-                  {chartData.reduce((sum, d) => sum + d.orders, 0)}
+                  {processing}
                 </Typography>
               </Box>
               <Box>
-                <Typography variant="body2" color="text.secondary">Avg. Daily</Typography>
+                <Typography variant="body2" color="text.secondary">Thành công</Typography>
                 <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                  ${(chartData.reduce((sum, d) => sum + d.revenue, 0) / chartData.length).toFixed(0)}
+                  {delivered}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Đã hủy</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  {cancelled}
                 </Typography>
               </Box>
             </Box>
@@ -563,7 +575,7 @@ const Dashboard: React.FC = () => {
                             {product.orders} orders
                           </Typography>
                           <Typography variant="caption" color="success.main" sx={{ fontWeight: 600 }}>
-                            ${product.revenue.toLocaleString()}
+                            {formatVND(product.revenue)}
                           </Typography>
                         </Box>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -581,83 +593,9 @@ const Dashboard: React.FC = () => {
         </Grid>
       </Grid>
 
-      {/* Recent Orders and Activities */}
+      {/* Recent Activities */}
       <Grid container spacing={3}>
-        {/* Recent Orders Table */}
-        <Grid item xs={12} lg={8}>
-          <Paper sx={{ p: 3 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
-                <ShoppingCart color="primary" />
-                Recent Orders
-              </Typography>
-              <Button size="small" endIcon={<Visibility />}>View All</Button>
-            </Box>
-            <Divider sx={{ mb: 2 }} />
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ fontWeight: 600 }}>Order ID</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Customer</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Items</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Total</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Payment</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Time</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {recentOrders.map((order) => (
-                    <TableRow key={order.id} hover>
-                      <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 500, fontFamily: 'monospace' }}>
-                          {order.id}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>{order.customerName}</TableCell>
-                      <TableCell>
-                        <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 200 }}>
-                          {order.items}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: 'success.main' }}>
-                          ${order.total.toFixed(2)}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Chip label={order.paymentMethod} size="small" variant="outlined" />
-                      </TableCell>
-                      <TableCell>
-                        <Chip 
-                          label={getStatusLabel(order.status)}
-                          size="small"
-                          color={getStatusColor(order.status)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="caption" color="text.secondary">
-                          {order.time}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Tooltip title="View Details">
-                          <IconButton size="small" color="primary">
-                            <Visibility fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Paper>
-        </Grid>
 
-        {/* Recent Activities */}
         <Grid item xs={12} lg={4}>
           <Paper sx={{ p: 3, height: '100%' }}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>

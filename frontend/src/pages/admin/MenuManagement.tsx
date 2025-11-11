@@ -174,9 +174,9 @@ const MenuManagement: React.FC = () => {
     }
   };
 
-  const handleDeleteItem = async (id: string) => {
+  const handleDeleteItem = async (id: number) => {
     try {
-      await deleteMenuItem(Number(id));
+      await deleteMenuItem(id);
       await loadData(); // Reload the list
     } catch (err) {
       setError('Không thể xóa menu item');

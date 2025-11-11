@@ -39,6 +39,14 @@ public class VNPayConfig {
     @Value("${vnPay.return-url}")
     String vnpReturnUrl;
 
+    @Getter
+    @Value("${vnPay.demo:true}")
+    boolean vnpDemo;
+
+    @Getter
+    @Value("${vnPay.timezone:GMT+7}")
+    String vnpTimezone;
+
     public Map<String, String> getVNPayConfig() {
         Map<String, String> vnpParams = new HashMap<>();
         vnpParams.put("vnp_Version", vnpVersion);
@@ -49,8 +57,8 @@ public class VNPayConfig {
         vnpParams.put("vnp_OrderType", vnpOrderType);
         vnpParams.put("vnp_Locale", "vn");
         vnpParams.put("vnp_ReturnUrl", vnpReturnUrl);
-        vnpParams.put("vnp_CreateDate", VNPayUtils.getCreateDate());
-        vnpParams.put("vnp_ExpireDate", VNPayUtils.getExpireDate());
+        vnpParams.put("vnp_CreateDate", VNPayUtils.getCreateDate(vnpTimezone));
+        vnpParams.put("vnp_ExpireDate", VNPayUtils.getExpireDate(vnpTimezone));
         vnpParams.put("vnp_BankCode", "NCB");
         return vnpParams;
     }

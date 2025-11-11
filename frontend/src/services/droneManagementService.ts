@@ -37,6 +37,13 @@ export interface DroneAssignment {
   etaSeconds?: number;
 }
 
+export interface PageMeta {
+  number: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
 export interface DronePosition {
   droneId: string;
   serialNumber: string;
@@ -88,12 +95,50 @@ class DroneManagementService {
     }
   }
 
+  async getDronesPage(page: number, size: number, status?: string): Promise<{ drones: DroneFleet[]; page: PageMeta; total: number }>
+  {
+    try {
+      const params: any = { page, size };
+      if (status && status !== 'ALL') params.status = status;
+      const response = await this.apiClient.get('/drone-management/drones', { params });
+      const drones = response.data.drones || [];
+      const pageMeta = response.data.page || { number: page, size, totalElements: Array.isArray(drones) ? drones.length : 0, totalPages: 1 };
+      const total = Number(response.data.total ?? pageMeta.totalElements ?? (drones?.length || 0));
+      return { drones, page: pageMeta, total };
+    } catch (error) {
+      console.error('Error fetching paged drones:', error);
+      throw error;
+    }
+  }
+
   async getDroneDetail(droneId: string): Promise<DroneFleet> {
     try {
       const response = await this.apiClient.get(`/drone-management/drones/${droneId}`);
       return response.data;
     } catch (error) {
       console.error('Error fetching drone detail:', error);
+      throw error;
+    }
+  }
+
+  // Fleet stats
+  async getFleetStats(): Promise<{ total: number; idleCount: number; assignedCount: number; deliveringCount: number; returningCount: number; chargingCount: number; maintenanceCount: number; offlineCount: number; }>
+  {
+    try {
+      const response = await this.apiClient.get('/drone-management/stats');
+      const d = response.data || {};
+      return {
+        total: Number(d.total ?? 0),
+        idleCount: Number(d.idleCount ?? 0),
+        assignedCount: Number(d.assignedCount ?? 0),
+        deliveringCount: Number(d.deliveringCount ?? 0),
+        returningCount: Number(d.returningCount ?? 0),
+        chargingCount: Number(d.chargingCount ?? 0),
+        maintenanceCount: Number(d.maintenanceCount ?? 0),
+        offlineCount: Number(d.offlineCount ?? 0),
+      };
+    } catch (error) {
+      console.error('Error fetching fleet stats:', error);
       throw error;
     }
   }
@@ -105,6 +150,17 @@ class DroneManagementService {
       });
     } catch (error) {
       console.error('Error updating drone status:', error);
+      throw error;
+    }
+  }
+
+  // Update drone details
+  async updateDrone(droneId: string, payload: Partial<DroneFleet>): Promise<DroneFleet> {
+    try {
+      const response = await this.apiClient.put(`/drone-management/drones/${droneId}`, payload);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating drone:', error);
       throw error;
     }
   }
@@ -123,6 +179,16 @@ class DroneManagementService {
       await this.apiClient.post(`/drone-management/drones/${droneId}/activate`);
     } catch (error) {
       console.error('Error activating drone:', error);
+      throw error;
+    }
+  }
+
+  // Delete drone
+  async deleteDrone(droneId: string): Promise<void> {
+    try {
+      await this.apiClient.delete(`/drone-management/drones/${droneId}`);
+    } catch (error) {
+      console.error('Error deleting drone:', error);
       throw error;
     }
   }

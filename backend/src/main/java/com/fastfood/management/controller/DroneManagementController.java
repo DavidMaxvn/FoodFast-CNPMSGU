@@ -31,25 +31,145 @@ public class DroneManagementController {
     private final DroneSimulator droneSimulator;
 
     /**
-     * GET /api/drone-management/drones - Lấy danh sách tất cả drone
+     * GET /api/drone-management/stats - Thống kê số lượng drone theo trạng thái chính
      */
-    @GetMapping("/drones")
-    public ResponseEntity<?> getAllDrones() {
+    @GetMapping("/stats")
+    public ResponseEntity<?> getFleetStats() {
         try {
             List<Drone> drones = droneRepository.findAll();
-            List<Map<String, Object>> droneList = drones.stream()
-                .map(this::buildDroneResponse)
-                .collect(Collectors.toList());
-            
+            Map<String, Long> counts = drones.stream()
+                .collect(Collectors.groupingBy(d -> String.valueOf(d.getStatus()), Collectors.counting()));
+
+            long idle = counts.getOrDefault(String.valueOf(Drone.DroneStatus.IDLE), 0L);
+            long assigned = counts.getOrDefault(String.valueOf(Drone.DroneStatus.ASSIGNED), 0L);
+            long delivering = counts.getOrDefault(String.valueOf(Drone.DroneStatus.EN_ROUTE_TO_STORE), 0L)
+                + counts.getOrDefault(String.valueOf(Drone.DroneStatus.EN_ROUTE_TO_CUSTOMER), 0L)
+                + counts.getOrDefault(String.valueOf(Drone.DroneStatus.ARRIVING), 0L);
+            long returning = counts.getOrDefault(String.valueOf(Drone.DroneStatus.RETURN_TO_BASE), 0L);
+            long charging = 0L; // trạng thái CHARGING chưa được định nghĩa trong DroneStatus
+            long maintenance = counts.getOrDefault(String.valueOf(Drone.DroneStatus.MAINTENANCE), 0L);
+            long offline = counts.getOrDefault(String.valueOf(Drone.DroneStatus.OFFLINE), 0L);
+
             return ResponseEntity.ok(Map.of(
                 "success", true,
-                "drones", droneList,
-                "total", drones.size()
+                "total", drones.size(),
+                "idleCount", idle,
+                "assignedCount", assigned,
+                "deliveringCount", delivering,
+                "returningCount", returning,
+                "chargingCount", charging,
+                "maintenanceCount", maintenance,
+                "offlineCount", offline
             ));
+        } catch (Exception e) {
+            log.error("Error fetching fleet stats: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * GET /api/drone-management/drones - Lấy danh sách drone có hỗ trợ phân trang và lọc trạng thái
+     */
+    @GetMapping("/drones")
+    public ResponseEntity<?> getAllDrones(
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size,
+            @RequestParam(value = "status", required = false) String status
+    ) {
+        try {
+            // Nếu không có tham số phân trang, trả về danh sách như trước để giữ tương thích
+            if (page == null || size == null) {
+                List<Drone> drones = droneRepository.findAll();
+                List<Map<String, Object>> droneList = drones.stream()
+                        .map(this::buildDroneResponse)
+                        .collect(Collectors.toList());
+
+                return ResponseEntity.ok(Map.of(
+                        "success", true,
+                        "drones", droneList,
+                        "total", drones.size()
+                ));
+            }
+
+            int p = Math.max(0, page);
+            int s = Math.max(1, size);
+
+            org.springframework.data.domain.Pageable pageable =
+                    org.springframework.data.domain.PageRequest.of(p, s,
+                            // Sort theo 'id' để tránh lỗi nếu DB chưa có cột 'created_at'
+                            org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "id"));
+
+            org.springframework.data.domain.Page<Drone> pageResult;
+
+            Drone.DroneStatus filterStatus = null;
+            java.util.List<Drone.DroneStatus> statusesFilter = null;
+            if (status != null && !status.isBlank()) {
+                String normalized = status.trim().toUpperCase();
+                // Cho phép "DELIVERING" ánh xạ về nhóm trạng thái vận chuyển
+                if ("DELIVERING".equals(normalized)) {
+                    statusesFilter = java.util.Arrays.asList(
+                            Drone.DroneStatus.EN_ROUTE_TO_STORE,
+                            Drone.DroneStatus.EN_ROUTE_TO_CUSTOMER,
+                            Drone.DroneStatus.ARRIVING
+                    );
+                } else {
+                    try {
+                        filterStatus = Drone.DroneStatus.valueOf(normalized);
+                    } catch (IllegalArgumentException ignored) {
+                        filterStatus = null;
+                    }
+                }
+            }
+
+            try {
+                if (statusesFilter != null && !statusesFilter.isEmpty()) {
+                    pageResult = droneRepository.findByStatusIn(statusesFilter, pageable);
+                } else if (filterStatus != null) {
+                    pageResult = droneRepository.findByStatus(filterStatus, pageable);
+                } else {
+                    pageResult = droneRepository.findAll(pageable);
+                }
+            } catch (Exception repoEx) {
+                log.error("Paged query failed, falling back to in-memory pagination: {}", repoEx.getMessage());
+                // Fallback: load all then paginate in-memory to avoid 500 for legacy schemas
+                List<Drone> all = droneRepository.findAll();
+                final java.util.List<Drone.DroneStatus> statusesFilterFinal = statusesFilter;
+                final Drone.DroneStatus filterStatusFinal = filterStatus;
+                if (statusesFilterFinal != null && !statusesFilterFinal.isEmpty()) {
+                    final java.util.Set<Drone.DroneStatus> set = new java.util.HashSet<>(statusesFilterFinal);
+                    all = all.stream().filter(d -> set.contains(d.getStatus())).collect(Collectors.toList());
+                } else if (filterStatusFinal != null) {
+                    all = all.stream().filter(d -> d.getStatus() == filterStatusFinal).collect(Collectors.toList());
+                }
+                int from = Math.min(p * s, all.size());
+                int to = Math.min(from + s, all.size());
+                List<Drone> slice = all.subList(from, to);
+                pageResult = new org.springframework.data.domain.PageImpl<>(slice, pageable, all.size());
+            }
+
+            List<Map<String, Object>> droneList = pageResult.getContent().stream()
+                    .map(this::buildDroneResponse)
+                    .collect(Collectors.toList());
+
+            Map<String, Object> pageMeta = Map.of(
+                    "number", pageResult.getNumber(),
+                    "size", pageResult.getSize(),
+                    "totalElements", pageResult.getTotalElements(),
+                    "totalPages", pageResult.getTotalPages()
+            );
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("success", true);
+            payload.put("drones", droneList);
+            payload.put("page", pageMeta);
+            payload.put("total", pageResult.getTotalElements());
+            // Cho phép status null mà không gây lỗi (Map.of không chấp nhận null)
+            payload.put("status", status);
+            return ResponseEntity.ok(payload);
         } catch (Exception e) {
             log.error("Error fetching drones: {}", e.getMessage());
             return ResponseEntity.badRequest()
-                .body(Map.of("error", e.getMessage()));
+                    .body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -115,6 +235,109 @@ public class DroneManagementController {
     }
 
     /**
+     * PUT /api/drone-management/drones/{id} - Cập nhật thông tin cơ bản của drone
+     */
+    @PutMapping("/drones/{id}")
+    public ResponseEntity<?> updateDrone(@PathVariable Long id, @RequestBody Map<String, Object> request) {
+        try {
+            Optional<Drone> droneOpt = droneRepository.findById(id);
+            if (droneOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            Drone drone = droneOpt.get();
+
+            // Cập nhật serial nếu cung cấp và không trùng
+            Object serialObj = request.get("serialNumber");
+            if (serialObj == null) serialObj = request.get("serial");
+            if (serialObj != null) {
+                String newSerial = String.valueOf(serialObj);
+                if (newSerial != null && !newSerial.isBlank() && !newSerial.equalsIgnoreCase(drone.getSerialNumber())) {
+                    boolean exists = droneRepository.existsBySerialIgnoreCase(newSerial);
+                    if (exists) {
+                        return ResponseEntity.badRequest().body(Map.of("error", "serialNumber đã tồn tại"));
+                    }
+                    drone.setSerial(newSerial);
+                }
+            }
+
+            if (request.get("model") != null) {
+                drone.setModel(String.valueOf(request.get("model")));
+            }
+            if (request.get("homeLat") != null) {
+                Double v = toDouble(request.get("homeLat"));
+                drone.setHomeLat(v);
+            }
+            if (request.get("homeLng") != null) {
+                Double v = toDouble(request.get("homeLng"));
+                drone.setHomeLng(v);
+            }
+            if (request.get("maxPayload") != null) {
+                Double v = toDouble(request.get("maxPayload"));
+                drone.setMaxPayloadKg(v);
+            }
+            if (request.get("maxRange") != null) {
+                Double v = toDouble(request.get("maxRange"));
+                drone.setMaxRangeKm(v);
+            }
+            if (request.get("batteryLevel") != null) {
+                Double v = toDouble(request.get("batteryLevel"));
+                if (v != null) drone.setBatteryPct(v);
+            }
+            if (request.get("currentLat") != null) {
+                Double v = toDouble(request.get("currentLat"));
+                drone.setCurrentLat(v);
+            }
+            if (request.get("currentLng") != null) {
+                Double v = toDouble(request.get("currentLng"));
+                drone.setCurrentLng(v);
+            }
+            if (request.get("isActive") != null) {
+                boolean active = Boolean.parseBoolean(String.valueOf(request.get("isActive")));
+                if (!active) {
+                    drone.setStatus(Drone.DroneStatus.OFFLINE);
+                } else if (drone.getStatus() == Drone.DroneStatus.OFFLINE) {
+                    drone.setStatus(Drone.DroneStatus.IDLE);
+                }
+            }
+
+            Drone saved = droneRepository.save(drone);
+            return ResponseEntity.ok(buildDroneDetailResponse(saved));
+        } catch (Exception e) {
+            log.error("Error updating drone: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * DELETE /api/drone-management/drones/{id} - Xóa drone nếu không có assignment hoạt động
+     */
+    @DeleteMapping("/drones/{id}")
+    public ResponseEntity<?> deleteDrone(@PathVariable Long id) {
+        try {
+            Optional<Drone> droneOpt = droneRepository.findById(id);
+            if (droneOpt.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            // Không xóa nếu đang có assignment hoạt động
+            Optional<DroneAssignment> current = fleetService.getCurrentAssignment(id);
+            if (current.isPresent()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "Drone đang có assignment hoạt động, không thể xóa"
+                ));
+            }
+
+            droneRepository.deleteById(id);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Đã xóa drone", "droneId", id));
+        } catch (Exception e) {
+            log.error("Error deleting drone: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * GET /api/drone-management/drones/{id} - Lấy thông tin chi tiết drone
      */
     @GetMapping("/drones/{id}")
@@ -157,7 +380,23 @@ public class DroneManagementController {
                     .body(Map.of("error", "Status is required"));
             }
 
-            Drone.DroneStatus status = Drone.DroneStatus.valueOf(newStatus);
+            // Đơn giản hoá cho demo: chấp nhận không phân biệt hoa thường và từ khoá thân thiện như "DELIVERING"
+            String normalized = newStatus.trim().toUpperCase();
+            Drone.DroneStatus status;
+            try {
+                if ("DELIVERING".equals(normalized)) {
+                    status = Drone.DroneStatus.EN_ROUTE_TO_CUSTOMER; // ánh xạ từ "DELIVERING" cho demo
+                } else {
+                    status = Drone.DroneStatus.valueOf(normalized);
+                }
+            } catch (IllegalArgumentException iae) {
+                return ResponseEntity.badRequest()
+                    .body(Map.of(
+                        "error", "INVALID_STATUS",
+                        "message", "Valid statuses: OFFLINE, IDLE, ASSIGNED, EN_ROUTE_TO_STORE, AT_STORE, EN_ROUTE_TO_CUSTOMER, ARRIVING, RETURN_TO_BASE, MAINTENANCE",
+                        "received", newStatus
+                    ));
+            }
             drone.setStatus(status);
             droneRepository.save(drone);
 

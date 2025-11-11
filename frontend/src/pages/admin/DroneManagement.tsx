@@ -27,7 +27,8 @@ import {
   Switch,
   FormControlLabel,
   LinearProgress,
-  Snackbar
+  Snackbar,
+  TablePagination
 } from '@mui/material';
 import {
   Add,
@@ -48,12 +49,17 @@ import {
   PlayArrow,
   Home,
   Build,
-  PowerSettingsNew
+  PowerSettingsNew,
+  Delete,
+  Edit,
+  Save
 } from '@mui/icons-material';
 import DroneMap from '../../components/DroneMap';
+import { normalizePair, clampToHcmRadius } from '../../utils/geo';
 import DroneAssignmentService, { DroneStation, AssignmentRequest } from '../../services/droneAssignmentService';
-import DroneManagementService, { DroneFleet as DroneFleetType } from '../../services/droneManagementService';
+import DroneManagementService, { DroneFleet as DroneFleetType, DroneAssignment } from '../../services/droneManagementService';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import { getOrdersByStatus, assignDroneToOrder, OrderResponse, Page as OrderPage } from '../../services/order';
 
 interface DroneFleet {
   id: string;
@@ -78,6 +84,8 @@ interface DroneFleet {
 }
 
 const DroneManagement: React.FC = () => {
+  // Cờ môi trường để ẩn UI Trạm Drone (giả lập)
+  const ENABLE_STATIONS = (process.env.REACT_APP_ENABLE_DRONE_STATIONS ?? 'false') === 'true';
   // New drone form state
   const [newDrone, setNewDrone] = useState<Partial<DroneFleetType>>({
     serialNumber: '',
@@ -107,14 +115,145 @@ const DroneManagement: React.FC = () => {
   const [_configDialogOpen, setConfigDialogOpen] = useState(false);
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
   const [droneStations, setDroneStations] = useState<DroneStation[]>([]);
+  // Toggle to show exact DB coordinates (no normalization/clamping)
+  const [exactDbMode, setExactDbMode] = useState(false);
   const [assignmentRequest, setAssignmentRequest] = useState<AssignmentRequest | null>(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' as 'success' | 'error' | 'info' | 'warning' });
+  const [fleetStats, setFleetStats] = useState<{ total: number; idleCount: number; assignedCount: number; deliveringCount: number; returningCount: number; chargingCount: number; maintenanceCount: number; offlineCount: number; } | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [activeAssignments, setActiveAssignments] = useState<DroneAssignment[]>([]);
+  const [isEditingDrone, setIsEditingDrone] = useState(false);
+  const [editDroneForm, setEditDroneForm] = useState<Partial<DroneFleetType>>({});
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [total, setTotal] = useState(0);
+
+  // Tab: Đơn chờ gán (READY_FOR_DELIVERY)
+  const PendingOrdersTab: React.FC = () => {
+    const [pending, setPending] = useState<OrderResponse[]>([]);
+    const [pendingPageData, setPendingPageData] = useState<OrderPage<OrderResponse> | null>(null);
+    const [pendingPage, setPendingPage] = useState(0);
+    const [pendingSize, setPendingSize] = useState(10);
+    const [pendingLoading, setPendingLoading] = useState(false);
+
+    const fetchPending = async () => {
+      setPendingLoading(true);
+      try {
+        const res = await getOrdersByStatus('READY_FOR_DELIVERY', pendingPage, pendingSize);
+        setPendingPageData(res);
+        setPending(res.content || []);
+      } catch (e) {
+        setSnackbar({ open: true, message: 'Không tải được danh sách đơn chờ gán', severity: 'error' });
+      } finally {
+        setPendingLoading(false);
+      }
+    };
+
+    useEffect(() => { fetchPending(); /* eslint-disable-next-line */ }, [pendingPage, pendingSize]);
+
+    const handleAssign = async (orderId: number) => {
+      try {
+        setPendingLoading(true);
+        const result = await assignDroneToOrder(orderId, true);
+        if (result?.success) {
+          setSnackbar({ open: true, message: `Đã gán drone cho đơn #${orderId}`, severity: 'success' });
+          // Reload pending list
+          fetchPending();
+          // Làm mới dữ liệu drone để phản ánh trạng thái mới
+          loadDroneData();
+        } else {
+          setSnackbar({ open: true, message: result?.message || 'Gán drone thất bại', severity: 'error' });
+        }
+      } catch (e: any) {
+        setSnackbar({ open: true, message: e?.message || 'Có lỗi khi gán drone', severity: 'error' });
+      } finally {
+        setPendingLoading(false);
+      }
+    };
+
+    return (
+      <Box>
+        {pendingLoading && <LinearProgress sx={{ mb: 2 }} />}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h6">Đơn Hàng Chờ Gán Drone</Typography>
+          <Box>
+            <Button variant="outlined" startIcon={<Refresh />} onClick={fetchPending} disabled={pendingLoading}>
+              {pendingLoading ? 'Đang tải...' : 'Làm mới'}
+            </Button>
+          </Box>
+        </Box>
+
+        <TableContainer component={Paper}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Mã đơn</TableCell>
+                <TableCell>Trạng thái</TableCell>
+                <TableCell>Tổng tiền</TableCell>
+                <TableCell>Thời gian tạo</TableCell>
+                <TableCell align="right">Thao tác</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {pending.map((o) => (
+                <TableRow key={o.id} hover>
+                  <TableCell>{o.orderCode || String(o.id)}</TableCell>
+                  <TableCell>{o.status}</TableCell>
+                  <TableCell>{Number(o.totalAmount || 0).toLocaleString('vi-VN')} đ</TableCell>
+                  <TableCell>{String(o.createdAt || '')}</TableCell>
+                  <TableCell align="right">
+                    <Button variant="contained" size="small" startIcon={<Assignment />} onClick={() => handleAssign(o.id)} disabled={pendingLoading}>
+                      Gán drone
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {pending.length === 0 && !pendingLoading && (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <Alert severity="info">Không có đơn sẵn sàng giao cần gán drone.</Alert>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
+          <Button variant="outlined" disabled={pendingPage <= 0 || pendingLoading} onClick={() => setPendingPage((p) => Math.max(0, p - 1))}>Trang trước</Button>
+          <Button variant="outlined" disabled={pendingLoading || (pendingPageData ? pendingPage >= (pendingPageData.totalPages - 1) : false)} onClick={() => setPendingPage((p) => p + 1)}>Trang sau</Button>
+        </Box>
+      </Box>
+    );
+  };
 
   // Load drone data from API
   useEffect(() => {
     loadDroneData();
-    loadDroneStations();
-  }, []);
+    if (ENABLE_STATIONS) {
+      loadDroneStations();
+    }
+  }, [ENABLE_STATIONS, page, rowsPerPage, statusFilter]);
+
+  // Tải thống kê fleet từ API
+  const loadFleetStats = async () => {
+    try {
+      const stats = await DroneManagementService.getFleetStats();
+      setFleetStats(stats);
+    } catch (error) {
+      console.warn('Không tải được thống kê fleet từ API');
+    }
+  };
+
+  // Tải danh sách gán đang hoạt động
+  const loadActiveAssignments = async () => {
+    try {
+      const assignments = await DroneManagementService.getActiveAssignments();
+      setActiveAssignments(assignments);
+    } catch (error) {
+      console.warn('Không tải được danh sách gán tự động');
+    }
+  };
 
   const loadDroneStations = async () => {
     try {
@@ -180,14 +319,33 @@ const DroneManagement: React.FC = () => {
     try {
       setLoading(true);
       
-      // Load real drone data from API
-      const dronesData = await DroneManagementService.getAllDrones();
-      console.log('Loaded drones:', dronesData);
-      setDrones(dronesData);
+      // Load real drone data from API (paged)
+      const { drones: dronesData, total: totalCount } = await DroneManagementService.getDronesPage(page, rowsPerPage, statusFilter);
+      console.log('Loaded drones (paged):', { page, rowsPerPage, statusFilter, totalCount });
+      // Normalize and clamp coordinates to HCM radius for consistent map rendering
+      const normalizedDrones = (dronesData || []).map((d: any) => {
+        const cur = clampToHcmRadius(normalizePair(d.currentLat, d.currentLng));
+        const home = clampToHcmRadius(normalizePair(d.homeLat, d.homeLng));
+        return {
+          ...d,
+          currentLat: cur?.lat ?? d.currentLat,
+          currentLng: cur?.lng ?? d.currentLng,
+          homeLat: home?.lat ?? d.homeLat,
+          homeLng: home?.lng ?? d.homeLng,
+        };
+      });
+      setDrones(normalizedDrones);
+      setTotal(totalCount || normalizedDrones.length);
+
+      // Load fleet statistics
+      loadFleetStats();
 
       // Load drone stations
       const stationsData = await DroneAssignmentService.getDroneStations();
       setStations(stationsData);
+
+      // Load active assignments for tracking tab
+      loadActiveAssignments();
 
       setError(null);
     } catch (err) {
@@ -282,7 +440,20 @@ const DroneManagement: React.FC = () => {
         }
       ];
 
-      setDrones(mockDrones);
+      // Also normalize mock data to ensure consistency
+      const normalizedMock = mockDrones.map((d) => {
+        const cur = clampToHcmRadius(normalizePair(d.currentLat, d.currentLng));
+        const home = clampToHcmRadius(normalizePair(d.homeLat, d.homeLng));
+        return {
+          ...d,
+          currentLat: cur?.lat ?? d.currentLat,
+          currentLng: cur?.lng ?? d.currentLng,
+          homeLat: home?.lat ?? d.homeLat,
+          homeLng: home?.lng ?? d.homeLng,
+        };
+      });
+      setDrones(normalizedMock);
+      setTotal(normalizedMock.length);
       setStations(mockStations);
     } finally {
       setLoading(false);
@@ -319,11 +490,31 @@ const DroneManagement: React.FC = () => {
       'EN_ROUTE_TO_CUSTOMER': <Flight color="info" />,
       'DELIVERING': <Assignment color="warning" />,
       'RETURNING': <FlightLand color="info" />,
+      'RETURN_TO_BASE': <FlightLand color="info" />,
       'CHARGING': <PowerSettingsNew color="warning" />,
       'MAINTENANCE': <Build color="error" />,
       'OFFLINE': <Warning color="disabled" />
     };
     return icons[status] || <Warning />;
+  };
+
+  // Bản dịch trạng thái sang tiếng Việt để hiển thị UI
+  const getStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+      IDLE: 'Sẵn sàng',
+      ASSIGNED: 'Đã gán',
+      EN_ROUTE_TO_STORE: 'Đến cửa hàng',
+      AT_STORE: 'Tại cửa hàng',
+      EN_ROUTE_TO_CUSTOMER: 'Đến khách hàng',
+      ARRIVING: 'Sắp đến',
+      DELIVERING: 'Đang giao',
+      RETURNING: 'Trở về',
+      RETURN_TO_BASE: 'Trở về',
+      CHARGING: 'Đang sạc',
+      MAINTENANCE: 'Bảo trì',
+      OFFLINE: 'Ngoại tuyến',
+    };
+    return labels[status] || status;
   };
 
   const handleDroneAction = async (droneId: string, action: string) => {
@@ -414,6 +605,20 @@ const DroneManagement: React.FC = () => {
         </Button>
       </Box>
 
+      {/* Bộ lọc trạng thái */}
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+        {['ALL','IDLE','ASSIGNED','DELIVERING','RETURNING','CHARGING','MAINTENANCE','OFFLINE'].map((st) => (
+          <Chip
+            key={st}
+            label={st === 'ALL' ? 'Tất cả' : getStatusLabel(st)}
+            color={statusFilter === st ? 'primary' : 'default'}
+            onClick={() => { setStatusFilter(st); setPage(0); }}
+            clickable
+            size="small"
+          />
+        ))}
+      </Box>
+
       <Grid container spacing={3}>
         {/* Fleet Overview Cards */}
         <Grid item xs={12} md={3}>
@@ -422,7 +627,7 @@ const DroneManagement: React.FC = () => {
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <CheckCircle color="success" sx={{ mr: 1 }} />
                 <Typography variant="h6">
-                  {drones.filter(d => d.status === 'IDLE').length}
+                  {fleetStats ? fleetStats.idleCount : drones.filter(d => d.status === 'IDLE').length}
                 </Typography>
               </Box>
               <Typography color="text.secondary">Sẵn Sàng</Typography>
@@ -436,10 +641,10 @@ const DroneManagement: React.FC = () => {
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <Flight color="info" sx={{ mr: 1 }} />
                 <Typography variant="h6">
-                  {drones.filter(d => d.status.includes('EN_ROUTE') || d.status === 'DELIVERING').length}
+                  {fleetStats ? fleetStats.deliveringCount : drones.filter(d => d.status === 'DELIVERING').length}
                 </Typography>
               </Box>
-              <Typography color="text.secondary">Đang Bay</Typography>
+              <Typography color="text.secondary">Đang Giao</Typography>
             </CardContent>
           </Card>
         </Grid>
@@ -450,7 +655,7 @@ const DroneManagement: React.FC = () => {
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <PowerSettingsNew color="warning" sx={{ mr: 1 }} />
                 <Typography variant="h6">
-                  {drones.filter(d => d.status === 'CHARGING').length}
+                  {fleetStats ? fleetStats.chargingCount : drones.filter(d => d.status === 'CHARGING').length}
                 </Typography>
               </Box>
               <Typography color="text.secondary">Đang Sạc</Typography>
@@ -464,7 +669,7 @@ const DroneManagement: React.FC = () => {
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <Build color="error" sx={{ mr: 1 }} />
                 <Typography variant="h6">
-                  {drones.filter(d => d.status === 'MAINTENANCE' || d.status === 'OFFLINE').length}
+                  {fleetStats ? (fleetStats.maintenanceCount + fleetStats.offlineCount) : drones.filter(d => d.status === 'MAINTENANCE' || d.status === 'OFFLINE').length}
                 </Typography>
               </Box>
               <Typography color="text.secondary">Bảo Trì</Typography>
@@ -488,7 +693,7 @@ const DroneManagement: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {drones.map((drone) => (
+                {(statusFilter === 'ALL' ? drones : drones.filter(d => d.status === statusFilter)).map((drone) => (
                   <TableRow key={drone.id}>
                     <TableCell>
                       <Box>
@@ -502,7 +707,7 @@ const DroneManagement: React.FC = () => {
                       <Box sx={{ display: 'flex', alignItems: 'center' }}>
                         {getStatusIcon(drone.status)}
                         <Chip
-                          label={drone.status}
+                          label={getStatusLabel(drone.status)}
                           color={getStatusColor(drone.status)}
                           size="small"
                           sx={{ ml: 1 }}
@@ -570,6 +775,25 @@ const DroneManagement: React.FC = () => {
                             <Home />
                           </IconButton>
                         </Tooltip>
+                        <Tooltip title="Xóa">
+                          <IconButton
+                            size="small"
+                            onClick={async () => {
+                              try {
+                                setLoading(true);
+                                await DroneManagementService.deleteDrone(drone.id);
+                                setSnackbar({ open: true, message: 'Đã xóa drone', severity: 'success' });
+                                await loadDroneData();
+                              } catch (e) {
+                                setSnackbar({ open: true, message: 'Xóa drone thất bại', severity: 'error' });
+                              } finally {
+                                setLoading(false);
+                              }
+                            }}
+                          >
+                            <Delete />
+                          </IconButton>
+                        </Tooltip>
                       </Box>
                     </TableCell>
                   </TableRow>
@@ -577,6 +801,17 @@ const DroneManagement: React.FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', p: 2 }}>
+            <TablePagination
+              component="div"
+              count={total}
+              page={page}
+              onPageChange={(_, newPage) => setPage(newPage)}
+              rowsPerPage={rowsPerPage}
+              onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+              labelRowsPerPage="Số dòng mỗi trang"
+            />
+          </Box>
         </Grid>
       </Grid>
     </Box>
@@ -665,6 +900,12 @@ const DroneManagement: React.FC = () => {
       <Typography variant="h6" gutterBottom>
         Tổng Quan Bản Đồ Fleet
       </Typography>
+      <Box sx={{ mb: 1 }}>
+        <FormControlLabel
+          control={<Switch checked={exactDbMode} onChange={(e) => setExactDbMode(e.target.checked)} />}
+          label="Hiển thị đúng tọa độ từ DB (không chuẩn hóa)"
+        />
+      </Box>
       <Paper sx={{ p: 2 }}>
         <DroneMap
           drones={drones.map(drone => ({
@@ -675,7 +916,7 @@ const DroneManagement: React.FC = () => {
             batteryPct: drone.batteryLevel,
             assignedOrderId: drone.assignedOrderId
           }))}
-          stations={stations.map(station => ({
+          stations={(ENABLE_STATIONS ? stations : []).map(station => ({
             id: station.id,
             name: station.name,
             lat: station.location.lat,
@@ -686,6 +927,7 @@ const DroneManagement: React.FC = () => {
           }))}
           height={600}
           showRoutes={false}
+          exactDb={exactDbMode}
           onDroneClick={(droneId: string) => {
             const drone = drones.find(d => d.id === droneId);
             if (drone) setSelectedDrone(drone);
@@ -695,6 +937,46 @@ const DroneManagement: React.FC = () => {
             if (station) setSelectedStation(station);
           }}
         />
+      </Paper>
+    </Box>
+  );
+
+  const AutoAssignTrackingTab = () => (
+    <Box>
+      <Typography variant="h6" gutterBottom>
+        Theo Dõi Drone Auto-Assign
+      </Typography>
+      <Paper>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Drone</TableCell>
+                <TableCell>Serial</TableCell>
+                <TableCell>Đơn Hàng</TableCell>
+                <TableCell>Chế Độ</TableCell>
+                <TableCell>Thời Gian Gán</TableCell>
+                <TableCell>Trạng Thái Giao</TableCell>
+                <TableCell>ETA (phút)</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {activeAssignments.map(a => (
+                <TableRow key={a.id}>
+                  <TableCell>{a.droneId}</TableCell>
+                  <TableCell>{a.droneSerialNumber}</TableCell>
+                  <TableCell>
+                    {a.orderId ? <Chip label={a.orderId} size="small" color="primary" /> : '-'}
+                  </TableCell>
+                  <TableCell>{a.assignmentMode}</TableCell>
+                  <TableCell>{new Date(a.assignedAt).toLocaleString()}</TableCell>
+                  <TableCell>{a.deliveryStatus || '-'}</TableCell>
+                  <TableCell>{a.etaSeconds ? Math.round(a.etaSeconds/60) : '-'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Paper>
     </Box>
   );
@@ -711,7 +993,10 @@ const DroneManagement: React.FC = () => {
       try {
         setLoading(true);
         const tracking = await DroneManagementService.getDeliveryTracking(selectedDrone.deliveryId);
-        const waypoints = tracking?.waypoints?.map(w => ({ lat: w.lat, lng: w.lng, type: w.type })) || [];
+        const waypoints = tracking?.waypoints?.map((w: any) => {
+          const p = clampToHcmRadius(normalizePair(w.lat, w.lng));
+          return { lat: p?.lat ?? w.lat, lng: p?.lng ?? w.lng, type: w.type };
+        }) || [];
         if (mounted) setSelectedDroneRoute(waypoints);
       } catch (err) {
         console.warn('Failed to load delivery tracking for drone', selectedDrone.id, err);
@@ -738,9 +1023,12 @@ const DroneManagement: React.FC = () => {
         if (!update) return;
         const matches = update.droneId === selectedDrone.id || (selectedDrone.deliveryId && update.deliveryId === selectedDrone.deliveryId);
         if (matches) {
+          const fixed = clampToHcmRadius(normalizePair(update.latitude, update.longitude));
+          const lat = fixed?.lat ?? update.latitude;
+          const lng = fixed?.lng ?? update.longitude;
           // update drones array and selectedDrone
-          setDrones(prev => prev.map(d => d.id === update.droneId ? { ...d, currentLat: update.latitude ?? d.currentLat, currentLng: update.longitude ?? d.currentLng, batteryLevel: update.batteryLevel ?? d.batteryLevel } : d));
-          setSelectedDrone(prev => prev && prev.id === update.droneId ? { ...prev, currentLat: update.latitude ?? prev.currentLat, currentLng: update.longitude ?? prev.currentLng, batteryLevel: update.batteryLevel ?? prev.batteryLevel } : prev);
+          setDrones(prev => prev.map(d => d.id === update.droneId ? { ...d, currentLat: lat ?? d.currentLat, currentLng: lng ?? d.currentLng, batteryLevel: update.batteryLevel ?? d.batteryLevel } : d));
+          setSelectedDrone(prev => prev && prev.id === update.droneId ? { ...prev, currentLat: lat ?? prev.currentLat, currentLng: lng ?? prev.currentLng, batteryLevel: update.batteryLevel ?? prev.batteryLevel } : prev);
         }
       } catch (e) {
         console.warn('Error handling GPS update', e);
@@ -876,21 +1164,31 @@ const DroneManagement: React.FC = () => {
       )}
 
       <Paper sx={{ mb: 3 }}>
-        <Tabs
-          value={tabValue}
-          onChange={(_, newValue) => setTabValue(newValue)}
-          sx={{ borderBottom: 1, borderColor: 'divider' }}
-        >
-          <Tab label="Fleet Drone" />
-          <Tab label="Trạm Drone" />
-          <Tab label="Bản Đồ Tổng Quan" />
-        </Tabs>
-
-        <Box sx={{ p: 3 }}>
-          {tabValue === 0 && <DroneFleetTab />}
-          {tabValue === 1 && <StationManagementTab />}
-          {tabValue === 2 && <MapOverviewTab />}
-        </Box>
+        {(() => {
+          const tabs = [
+            { label: 'Fleet Drone', render: <DroneFleetTab /> },
+            { label: 'Đơn chờ gán', render: <PendingOrdersTab /> },
+            ...(ENABLE_STATIONS ? [{ label: 'Trạm Drone', render: <StationManagementTab /> }] : []),
+            { label: 'Bản Đồ Tổng Quan', render: <MapOverviewTab /> },
+            { label: 'Theo Dõi Auto-Assign', render: <AutoAssignTrackingTab /> }
+          ];
+          return (
+            <>
+              <Tabs
+                value={Math.min(tabValue, tabs.length - 1)}
+                onChange={(_, newValue) => setTabValue(newValue)}
+                sx={{ borderBottom: 1, borderColor: 'divider' }}
+              >
+                {tabs.map((t, idx) => (
+                  <Tab key={t.label} label={t.label} />
+                ))}
+              </Tabs>
+              <Box sx={{ p: 3 }}>
+                {tabs[Math.min(tabValue, tabs.length - 1)].render}
+              </Box>
+            </>
+          );
+        })()}
       </Paper>
 
       {/* Drone Detail Dialog */}
@@ -909,18 +1207,41 @@ const DroneManagement: React.FC = () => {
               <Grid container spacing={2}>
                 <Grid item xs={12} md={6}>
                   <Typography variant="subtitle2" gutterBottom>Thông Tin Cơ Bản</Typography>
-                  <Typography>Model: {selectedDrone.model}</Typography>
-                  <Typography>Trạng thái: {selectedDrone.status}</Typography>
-                  <Typography>Pin: {selectedDrone.batteryLevel}%</Typography>
-                  <Typography>Tải trọng tối đa: {selectedDrone.maxPayload}kg</Typography>
-                  <Typography>Tầm bay: {selectedDrone.maxRange}km</Typography>
+                  {isEditingDrone ? (
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1 }}>
+                      <TextField label="Serial" value={editDroneForm.serialNumber || ''} onChange={(e) => setEditDroneForm({ ...editDroneForm, serialNumber: e.target.value })} />
+                      <TextField label="Model" value={editDroneForm.model || ''} onChange={(e) => setEditDroneForm({ ...editDroneForm, model: e.target.value })} />
+                      <TextField label="Pin (%)" type="number" value={editDroneForm.batteryLevel ?? selectedDrone.batteryLevel} onChange={(e) => setEditDroneForm({ ...editDroneForm, batteryLevel: Number(e.target.value) })} />
+                      <TextField label="Tải trọng tối đa (kg)" type="number" value={editDroneForm.maxPayload ?? selectedDrone.maxPayload} onChange={(e) => setEditDroneForm({ ...editDroneForm, maxPayload: Number(e.target.value) })} />
+                      <TextField label="Tầm bay (km)" type="number" value={editDroneForm.maxRange ?? selectedDrone.maxRange} onChange={(e) => setEditDroneForm({ ...editDroneForm, maxRange: Number(e.target.value) })} />
+                    </Box>
+                  ) : (
+                    <>
+                      <Typography>Model: {selectedDrone.model}</Typography>
+                      <Typography>Trạng thái: {selectedDrone.status}</Typography>
+                      <Typography>Pin: {selectedDrone.batteryLevel}%</Typography>
+                      <Typography>Tải trọng tối đa: {selectedDrone.maxPayload}kg</Typography>
+                      <Typography>Tầm bay: {selectedDrone.maxRange}km</Typography>
+                    </>
+                  )}
                 </Grid>
                 <Grid item xs={12} md={6}>
                   <Typography variant="subtitle2" gutterBottom>Thống Kê</Typography>
-                  <Typography>Tổng chuyến bay: {selectedDrone.totalFlights}</Typography>
-                  <Typography>Giờ bay: {selectedDrone.flightHours}h</Typography>
-                  <Typography>Bảo trì cuối: {selectedDrone.lastMaintenance}</Typography>
-                  <Typography>Vị trí: {selectedDrone.currentLat?.toFixed(4)}, {selectedDrone.currentLng?.toFixed(4)}</Typography>
+                  {isEditingDrone ? (
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1 }}>
+                      <TextField label="Home Lat" type="number" value={editDroneForm.homeLat ?? selectedDrone.homeLat} onChange={(e) => setEditDroneForm({ ...editDroneForm, homeLat: Number(e.target.value) })} />
+                      <TextField label="Home Lng" type="number" value={editDroneForm.homeLng ?? selectedDrone.homeLng} onChange={(e) => setEditDroneForm({ ...editDroneForm, homeLng: Number(e.target.value) })} />
+                      <TextField label="Vị trí Lat" type="number" value={editDroneForm.currentLat ?? selectedDrone.currentLat} onChange={(e) => setEditDroneForm({ ...editDroneForm, currentLat: Number(e.target.value) })} />
+                      <TextField label="Vị trí Lng" type="number" value={editDroneForm.currentLng ?? selectedDrone.currentLng} onChange={(e) => setEditDroneForm({ ...editDroneForm, currentLng: Number(e.target.value) })} />
+                    </Box>
+                  ) : (
+                    <>
+                      <Typography>Tổng chuyến bay: {selectedDrone.totalFlights}</Typography>
+                      <Typography>Giờ bay: {selectedDrone.flightHours}h</Typography>
+                      <Typography>Bảo trì cuối: {selectedDrone.lastMaintenance}</Typography>
+                      <Typography>Vị trí: {selectedDrone.currentLat?.toFixed(4)}, {selectedDrone.currentLng?.toFixed(4)}</Typography>
+                    </>
+                  )}
                 </Grid>
               </Grid>
 
@@ -929,6 +1250,12 @@ const DroneManagement: React.FC = () => {
                 {selectedDrone.deliveryId ? (
                   <>
                     <Typography variant="h6">Đang giao đơn: {selectedDrone.assignedOrderId}</Typography>
+                    <Box sx={{ mb: 1 }}>
+                      <FormControlLabel
+                        control={<Switch checked={exactDbMode} onChange={(e) => setExactDbMode(e.target.checked)} />}
+                        label="Hiển thị đúng tọa độ từ DB (không chuẩn hóa)"
+                      />
+                    </Box>
                     <DroneMap
                       drones={[{
                         id: selectedDrone.id,
@@ -943,6 +1270,7 @@ const DroneManagement: React.FC = () => {
                       showRoutes={true}
                       selectedDroneId={selectedDrone.id}
                       route={selectedDroneRoute || undefined}
+                      exactDb={exactDbMode}
                       onDroneClick={() => {}}
                     />
                   </>
@@ -953,7 +1281,53 @@ const DroneManagement: React.FC = () => {
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setSelectedDrone(null)}>Đóng</Button>
-              <Button variant="contained">Cập Nhật</Button>
+              {!isEditingDrone && (
+                <Button startIcon={<Edit />} onClick={() => {
+                  setIsEditingDrone(true);
+                  setEditDroneForm({
+                    serialNumber: selectedDrone.serialNumber,
+                    model: selectedDrone.model,
+                    batteryLevel: selectedDrone.batteryLevel,
+                    maxPayload: selectedDrone.maxPayload,
+                    maxRange: selectedDrone.maxRange,
+                    homeLat: selectedDrone.homeLat,
+                    homeLng: selectedDrone.homeLng,
+                    currentLat: selectedDrone.currentLat,
+                    currentLng: selectedDrone.currentLng,
+                    isActive: selectedDrone.isActive
+                  });
+                }}>Sửa</Button>
+              )}
+              {isEditingDrone && (
+                <Button startIcon={<Save />} variant="contained" onClick={async () => {
+                  try {
+                    setLoading(true);
+                    const updated = await DroneManagementService.updateDrone(selectedDrone.id, editDroneForm);
+                    setSelectedDrone({ ...selectedDrone, ...updated } as any);
+                    setDrones(prev => prev.map(d => d.id === selectedDrone.id ? { ...d, ...updated } as any : d));
+                    setSnackbar({ open: true, message: 'Cập nhật drone thành công', severity: 'success' });
+                    setIsEditingDrone(false);
+                  } catch (e) {
+                    setSnackbar({ open: true, message: 'Cập nhật drone thất bại', severity: 'error' });
+                  } finally {
+                    setLoading(false);
+                  }
+                }}>Lưu</Button>
+              )}
+              <Button color="error" startIcon={<Delete />} onClick={async () => {
+                if (!selectedDrone) return;
+                try {
+                  setLoading(true);
+                  await DroneManagementService.deleteDrone(selectedDrone.id);
+                  setSnackbar({ open: true, message: 'Đã xóa drone', severity: 'success' });
+                  setSelectedDrone(null);
+                  await loadDroneData();
+                } catch (e) {
+                  setSnackbar({ open: true, message: 'Xóa drone thất bại', severity: 'error' });
+                } finally {
+                  setLoading(false);
+                }
+              }}>Xóa</Button>
             </DialogActions>
           </>
         )}
@@ -1031,39 +1405,43 @@ const DroneManagement: React.FC = () => {
                 </Grid>
               )}
               
-              <Typography variant="h6" sx={{ mt: 3, mb: 2 }}>
-                Trạm drone khả dụng
-              </Typography>
-              <TableContainer component={Paper}>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Tên trạm</TableCell>
-                      <TableCell>Vị trí</TableCell>
-                      <TableCell>Drone khả dụng</TableCell>
-                      <TableCell>Bán kính (km)</TableCell>
-                      <TableCell>Trạng thái</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {droneStations.map((station) => (
-                      <TableRow key={station.id}>
-                        <TableCell>{station.name}</TableCell>
-                        <TableCell>{`${station.location.lat.toFixed(4)}, ${station.location.lng.toFixed(4)}`}</TableCell>
-                        <TableCell>{station.availableDrones.length}/{station.capacity}</TableCell>
-                        <TableCell>{station.coverageRadius}</TableCell>
-                        <TableCell>
-                          <Chip 
-                            label={station.status} 
-                            color={station.status === 'active' ? 'success' : 'default'}
-                            size="small"
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+              {ENABLE_STATIONS && (
+                <>
+                  <Typography variant="h6" sx={{ mt: 3, mb: 2 }}>
+                    Trạm drone khả dụng
+                  </Typography>
+                  <TableContainer component={Paper}>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Tên trạm</TableCell>
+                          <TableCell>Vị trí</TableCell>
+                          <TableCell>Drone khả dụng</TableCell>
+                          <TableCell>Bán kính (km)</TableCell>
+                          <TableCell>Trạng thái</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {droneStations.map((station) => (
+                          <TableRow key={station.id}>
+                            <TableCell>{station.name}</TableCell>
+                            <TableCell>{`${station.location.lat.toFixed(4)}, ${station.location.lng.toFixed(4)}`}</TableCell>
+                            <TableCell>{station.availableDrones.length}/{station.capacity}</TableCell>
+                            <TableCell>{station.coverageRadius}</TableCell>
+                            <TableCell>
+                              <Chip 
+                                label={station.status} 
+                                color={station.status === 'active' ? 'success' : 'default'}
+                                size="small"
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </>
+              )}
             </Box>
           </DialogContent>
           <DialogActions>

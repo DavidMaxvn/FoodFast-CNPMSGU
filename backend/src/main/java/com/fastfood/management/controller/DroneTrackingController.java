@@ -115,21 +115,45 @@ public class DroneTrackingController {
             @PathVariable Long id,
             @RequestBody Map<String, Object> request) {
         try {
-            String currentSegment = (String) request.get("currentSegment");
-            int etaSeconds = ((Number) request.get("etaSeconds")).intValue();
-            String status = (String) request.get("status");
-            
+            if (request == null) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "error", "BAD_REQUEST",
+                        "message", "Missing request body"
+                ));
+            }
+
+            Object segObj = request.get("currentSegment");
+            Object etaObj = request.get("etaSeconds");
+            Object statusObj = request.get("status");
+
+            if (segObj == null || etaObj == null) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "error", "MISSING_PARAMETER",
+                        "message", "currentSegment and etaSeconds are required"
+                ));
+            }
+
+            String currentSegment = String.valueOf(segObj);
+            int etaSeconds = ((Number) etaObj).intValue();
+            String status = statusObj != null ? String.valueOf(statusObj) : null;
+
             droneTrackingService.updateDeliveryProgress(id, currentSegment, etaSeconds, status);
-            
+
             return ResponseEntity.ok(Map.of(
-                "success", true,
-                "message", "Delivery progress updated successfully",
-                "deliveryId", id
+                    "success", true,
+                    "message", "Delivery progress updated successfully",
+                    "deliveryId", id
+            ));
+        } catch (ClassCastException e) {
+            // Khi client gửi sai kiểu (ví dụ: etaSeconds là string), trả về lỗi rõ ràng
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "INVALID_ARGUMENT",
+                    "message", "etaSeconds must be a number"
             ));
         } catch (Exception e) {
             log.error("Error updating delivery progress: {}", e.getMessage());
             return ResponseEntity.badRequest()
-                .body(Map.of("error", e.getMessage()));
+                    .body(Map.of("error", e.getMessage()));
         }
     }
 }
