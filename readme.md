@@ -34,12 +34,11 @@ Mở API docs (khi backend chạy local hoặc container):
 Hai hàng ảnh, mỗi hàng 2 ảnh nhỏ (thay ảnh bằng file trong `./screenshots` hoặc đường dẫn web). Bạn có thể dán ảnh vào `./screenshots/` và tên file tương ứng.
 
 <div>
-  <img src="./screenshots/map.png" alt="map" width="200" style="margin:6px;"/>
-  <img src="./screenshots/routing.png" alt="routing" width="200" style="margin:6px;"/>
+  <img src="./imageTech/leafleat.jfif" alt="map" width="200" style="margin:6px;"/>
 </div>
 <div>
-  <img src="./screenshots/docker.png" alt="docker" width="200" style="margin:6px;"/>
-  <img src="./screenshots/spring_mysql_react.png" alt="spring-mysql-react" width="200" style="margin:6px;"/>
+  <img src="./imageTech/docker.png" alt="docker" width="200" style="margin:6px;"/>
+  <img src="./imageTech/springboot.jfif" alt="spring-mysql-react" width="200" style="margin:6px;"/>
 </div>
 
 > Ví dụ bạn có sẵn: `![foodfast drone deli Customer Home page](./screenshots/Customer_HomePage.jpeg)` — dán ảnh vào `screenshots` và link sẽ hiển thị.
