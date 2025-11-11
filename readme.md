@@ -8,17 +8,21 @@
 
 **Nhóm:** 22
 
-## Thành viên
-- Lê Song Nhật Quyền - 3122411174
-- Đỗ Phú Thành - 3122411189
-
 ---
 
 # Tên đề tài
-**2/ BE Dev theo hướng 3 lớp cho FoodFast với Drone Delivery**
+**/ BE Dev theo hướng 3 lớp cho FoodFast với Drone Delivery**
 
 ## Giới thiệu & mô tả
 FoodFast Drone Delivery là hệ thống giao đồ ăn nhanh bằng drone, mang đến trải nghiệm giao hàng hiện đại và tiện lợi. Người dùng có thể đặt món ăn từ các cửa hàng đối tác, thanh toán trực tuyến qua QR code, và nhận đồ ăn trực tiếp từ drone tại vị trí của mình.
+
+---
+
+## Thành viên
+| Họ và tên | Mã số sinh viên |
+|---|---:|
+| Lê Song Nhật Quyền | 3122411174 |
+| Đỗ Phú Thành | 3122411189 |
 
 ---
 
@@ -32,21 +36,20 @@ Mở API docs (khi backend chạy local hoặc container):
 
 ## Công nghệ sử dụng
 
-<div>
-  <img src="./imageTech/leafleat.jfif" alt="map" width="200" style="margin:6px;"/>
-  <img src="./imageTech/reactjs.jfif" alt="reactjs" width="200" style="margin:6px;"/>
-  <img src="./imageTech/cloudinary.png" alt="cloudinary" width="200" style="margin:6px;"/>
-
-</div>
-<div>
-  <img src="./imageTech/docker.png" alt="docker" width="200" style="margin:6px;"/>
-  <img src="./imageTech/springboot.jfif" alt="spring-mysql-react" width="200" style="margin:6px;"/>
+<!-- Responsive image grid: two rows, small thumbnails. Images live in ./imageTech/ -->
+<div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;align-items:center;">
+  <img src="./imageTech/leafleat.jfif" alt="leaflet" style="width:220px;height:140px;object-fit:cover;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);"/>
+  <img src="./imageTech/reactjs.jfif" alt="reactjs" style="width:220px;height:140px;object-fit:cover;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);"/>
+  <img src="./imageTech/docker.png" alt="docker" style="width:220px;height:140px;object-fit:cover;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);"/>
+  <img src="./imageTech/springboot.jfif" alt="springboot" style="width:220px;height:140px;object-fit:cover;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);"/>
+  <img src="./imageTech/cloudinary.png" alt="cloudinary" style="width:220px;height:140px;object-fit:cover;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.08);"/>
 </div>
 
+> Ghi chú: dán ảnh vào thư mục `./imageTech/` với tên tương ứng (leafleat.jfif, reactjs.jfif, docker.png, springboot.jfif, cloudinary.png) — mỗi ảnh sẽ tự động cân chỉnh và hiển thị đều.
 
 ---
 
-## Chi tiết công nghệ 
+## Chi tiết công nghệ
 - Frontend: ReactJS (TypeScript), react-leaflet để hiển thị bản đồ và theo dõi drone.
 - Backend: Spring Boot (3-layer architecture), JWT auth, WebSocket cho real-time updates, MySQL cho lưu trữ.
 - Thanh toán: VNPay (QR/Callback).
@@ -70,18 +73,22 @@ docker build -t YOUR_DOCKERHUB_USER/fastfood-frontend:1.0.0 ./frontend
 
 ```cmd
 docker login
-docker push YOUR_DOCKERHUB_USER/fastfood-backend:latest
-docker push YOUR_DOCKERHUB_USER/fastfood-frontend:latest
+docker push YOUR_DOCKERHUB_USER/fastfood-backend:1.0.0
+docker push YOUR_DOCKERHUB_USER/fastfood-frontend:1.0.0
 ```
 
-3) Run with docker-compose :
+3) Run with docker-compose (from repo root):
 
 ```cmd
 # build và khởi chạy
 docker-compose up --build -d
+# xem logs
+docker-compose logs -f backend
+```
 
 ### Lưu ý môi trường (MySQL & Spring profiles)
-- Để MySQL hoạt động trong `docker-compose`, KHÔNG dùng `MYSQL_USER=root`. Thay vào đó dùng `MYSQL_ROOT_PASSWORD` để thiết lập mật khẩu root, hoặc tạo user khác bằng `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`.
+- Trong `docker-compose.yml` KHÔNG dùng `MYSQL_USER=root`. Sử dụng `MYSQL_ROOT_PASSWORD` hoặc tạo user khác (MYSQL_USER / MYSQL_PASSWORD).
+
 
 
 
