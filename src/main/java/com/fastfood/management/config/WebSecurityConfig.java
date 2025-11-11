@@ -97,6 +97,16 @@ public class WebSecurityConfig {
         // Cho phép WebSocket endpoints
         .requestMatchers("/ws/**").permitAll()
         .requestMatchers("/api/ws/**").permitAll()
+
+        // Allow Swagger/OpenAPI UI and JSON (support both with and without context-path)
+        .requestMatchers("/v3/api-docs/**").permitAll()
+        .requestMatchers("/swagger-ui/**").permitAll()
+        .requestMatchers("/swagger-ui.html").permitAll()
+        .requestMatchers("/swagger-ui/index.html").permitAll()
+        .requestMatchers("/swagger-resources/**").permitAll()
+        .requestMatchers("/api/v3/api-docs/**").permitAll()
+        .requestMatchers("/api/swagger-ui/**").permitAll()
+
         .anyRequest().authenticated();
 
     // Thêm JWT filter trước UsernamePasswordAuthenticationFilter
